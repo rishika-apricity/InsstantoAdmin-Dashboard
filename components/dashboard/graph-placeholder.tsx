@@ -1,0 +1,178 @@
+import React, { useEffect, useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { LucideIcon } from "lucide-react"
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
+} from "recharts"
+import { collection, query, where, getDocs, doc } from "firebase/firestore"
+import { getFirestoreDb } from "@/lib/firebase"
+
+interface GraphPlaceholderProps {
+  title: string
+  description: string
+  icon: LucideIcon
+  iconColor?: string
+  children?: React.ReactNode
+  className?: string
+}
+
+type RevenuePoint = {
+  month: string
+  revenue: number
+  changePct?: number | null
+  changeDir?: "up" | "down" | "flat"
+  changeLabel?: string
+}
+
+export function GraphPlaceholder({
+  title,
+  description,
+  icon: Icon,
+  iconColor = "text-primary/50",
+  children,
+  className = "",
+}: GraphPlaceholderProps) {
+  const [data, setData] = useState<RevenuePoint[]>([])
+
+  const fetchRevenueData = async () => {
+    const db = getFirestoreDb()
+
+    // Provider/Customer document IDs to include
+    const providerIds = [
+      "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
+      "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
+      "VxxapfO7l8YM5f6xmFqpThc17eD3",
+    ]
+    const providerRefs = providerIds.map((id) => doc(db, "customer", id))
+
+    // Build 6 monthly buckets (oldest → current)
+    const now = new Date()
+    const startOldest = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+    const endNewest = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const monthBuckets = Array.from({ length: 6 }, (_, i) => {
+      const start = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() - 4 + i, 1)
+      const label = start.toLocaleString("default", { month: "short" })
+      return { label, start, end }
+    })
+
+    // Query bookings within range, completed, and by these providers
+    const bookingsRef = collection(db, "bookings")
+    const q = query(
+      bookingsRef,
+      where("provider_id", "in", providerRefs),
+      where("status", "==", "Service_Completed"),
+      where("date", ">=", startOldest),
+      where("date", "<", endNewest)
+    )
+    const snap = await getDocs(q)
+
+    // Sum revenue per month
+    const revenueByMonth: RevenuePoint[] = monthBuckets.map((m) => ({
+      month: m.label,
+      revenue: 0,
+    }))
+
+    snap.forEach((docSnap) => {
+      const b = docSnap.data() as any
+      const when: Date = b?.date?.toDate ? b.date.toDate() : b?.date ? new Date(b.date) : null
+      if (!when) return
+      const amt = Number(b?.amount_paid ?? 0) || 0
+      const idx = monthBuckets.findIndex((m) => when >= m.start && when < m.end)
+      if (idx !== -1) revenueByMonth[idx].revenue += amt
+    })
+
+    // Add percentage change, arrow label & direction
+    const withChanges: RevenuePoint[] = revenueByMonth.map((d, i, arr) => {
+      if (i === 0) return { ...d, changePct: null, changeDir: "flat", changeLabel: "—" }
+      const prev = arr[i - 1].revenue
+      if (prev <= 0) return { ...d, changePct: null, changeDir: "flat", changeLabel: "—" }
+
+      const pct = ((d.revenue - prev) / prev) * 100
+      // 1 decimal for small changes, whole numbers for bigger changes
+      const roundedAbs =
+        Math.abs(pct) < 10 ? Math.round(Math.abs(pct) * 10) / 10 : Math.round(Math.abs(pct))
+      const dir: "up" | "down" | "flat" = pct > 0 ? "up" : pct < 0 ? "down" : "flat"
+      const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "–"
+      const label = dir === "flat" ? "0%" : `${arrow} ${roundedAbs}%`
+      return { ...d, changePct: pct, changeDir: dir, changeLabel: label }
+    })
+
+    setData(withChanges)
+  }
+
+  useEffect(() => {
+    fetchRevenueData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const formatCurrency = (v: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(v)
+
+  // Custom renderer for the % change labels above each dot
+  const renderChangeLabel = (props: any) => {
+    const { x, y, index, value } = props
+    if (value == null || index == null) return null
+    const point: RevenuePoint | undefined = data[index]
+    const color =
+      point?.changeDir === "up" ? "#16a34a" : point?.changeDir === "down" ? "#dc2626" : "#6b7280"
+    return (
+      <text x={x} y={y - 12} textAnchor="middle" fontSize={12} fontWeight={600} fill={color}>
+        {value}
+      </text>
+    )
+  }
+
+  return (
+    <Card className={className}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Icon className={`h-5 w-5 ${iconColor.replace("/50", "")}`} />
+          {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {children || (
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 40, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis tickFormatter={(v) => formatCurrency(v).replace("₹", "₹ ")} />
+                <Tooltip
+                  formatter={(value, name, { payload }) => {
+                    const p = payload as RevenuePoint
+                    const change =
+                      p?.changeDir === "up"
+                        ? `▲ ${Math.abs(p.changePct ?? 0).toFixed(1)}%`
+                        : p?.changeDir === "down"
+                        ? `▼ ${Math.abs(p.changePct ?? 0).toFixed(1)}%`
+                        : "—"
+                    return [`${formatCurrency(Number(value))} (${change})`, "Revenue"]
+                  }}
+                  labelFormatter={(label) => `Month: ${label}`}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#8884d8"
+                  strokeWidth={3}
+                  dot={{ r: 6, stroke: "#8884d8", strokeWidth: 2, fill: "#8884d8" }}
+                  activeDot={{ r: 7 }}
+                >
+                  {/* % change labels above each point */}
+                  <LabelList dataKey="changeLabel" content={renderChangeLabel} />
+                </Line>
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
