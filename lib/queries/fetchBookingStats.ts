@@ -4,7 +4,8 @@ import {
     query,
     where,
     doc,
-    getDocs
+    getDocs,
+    Timestamp
 } from "firebase/firestore"
 import { getFirestoreDb } from "@/lib/firebase"  // Import the getFirestoreDb function
 
@@ -31,10 +32,12 @@ export async function fetchBookingStats(): Promise<BookingStats> {
 
     const customerRefs = customerIds.map(id => doc(db, "customer", id))
     const bookingsCol = collection(db, "bookings")
+    const from = Timestamp.fromDate(new Date('2025-08-01T00:00:00Z')) // August 1, 2025
+    const to = Timestamp.fromDate(new Date('2025-08-30T23:59:59Z')) // August 30, 2025
 
     const totalBookingsQuery = query(
         bookingsCol,
-        where("provider_id", "in", customerRefs)
+        where("provider_id", "in", customerRefs),
     )
 
     const pendingQuery = query(bookingsCol, where("status", "==", "Pending"))

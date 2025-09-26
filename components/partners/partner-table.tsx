@@ -14,13 +14,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import { Search, MoreHorizontal, Eye, Edit, CheckCircle, XCircle, DollarSign, Pause } from "lucide-react"
 import Link from "next/link"
-import { collection, getDocs, query, where } from "firebase/firestore"
+import { collection, getDocs, query, where, doc } from "firebase/firestore"
 import { getFirestoreDb } from "@/lib/firebase"
 
-// Define Partner type (simplified for Firestore data + static fields)
+// Define Partner type
 type Partner = {
   id: string
   display_name: string
@@ -30,7 +29,7 @@ type Partner = {
   services: string[]
   joinDate: string
   rating: number
-  onTimePercentage: number
+  reviewCount: number
   earnings: number
   pendingPayouts: number
   kycStatus: "verified" | "pending" | "rejected"
@@ -46,7 +45,9 @@ export function PartnerTable() {
     const fetchPartners = async () => {
       try {
         const db = getFirestoreDb()
-        const q = query(
+
+        // Fetch partners
+        const q1 = query(
           collection(db, "customer"),
           where("userType.provider", "==", true),
           where("partner_status", "==", "Onboarded")
@@ -57,49 +58,83 @@ export function PartnerTable() {
           where("partner_status", "==", "Onboarded")
         )
 
-        const [snap1, snap2] = await Promise.all([getDocs(q), getDocs(q2)])
+        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)])
 
-        const data: Partner[] = []
-
-        snap1.forEach((doc) => {
+        // Fetch Wallet data
+        const walletSnap = await getDocs(collection(db, "Wallet_Overall"))
+        const walletMap: Record<string, any> = {}
+        walletSnap.forEach((doc) => {
           const d = doc.data()
-          data.push({
+          if (d.service_partner_id?.id) {
+            walletMap[d.service_partner_id.id] = {
+              earnings: d.TotalAmountComeIn_Wallet || 0,
+              pendingPayouts: d.total_balance || 0,
+            }
+          }
+        })
+
+        const partnersData: Partner[] = []
+
+        // Helper: compute average rating + count for a partner
+        const getPartnerRating = async (partnerId: string) => {
+          const reviewsQuery = query(
+            collection(db, "reviews"),
+            where("partnerId", "==", doc(db, "customer", partnerId))
+          )
+          const reviewsSnap = await getDocs(reviewsQuery)
+          if (reviewsSnap.empty) return { avg: 0, count: 0 }
+
+          let total = 0
+          let count = 0
+          reviewsSnap.forEach((review) => {
+            const r = review.data()
+            if (r.partnerRating) {
+              total += r.partnerRating
+              count++
+            }
+          })
+
+          return { avg: count > 0 ? total / count : 0, count }
+        }
+
+        const pushPartner = async (doc: any, type: "provider" | "agency") => {
+          const d = doc.data()
+          const wallet = walletMap[doc.id] || { earnings: 0, pendingPayouts: 0 }
+
+          const { avg, count } = await getPartnerRating(doc.id)
+
+          partnersData.push({
             id: doc.id,
             display_name: d.display_name || "Unknown",
             phone_number: d.phone_number || "N/A",
-            type: "provider",
-            city: "Indore", // static placeholder
-            services: ["Home Cleaning", "Deep Cleaning"], // static placeholder
-            joinDate: "2024-01-01", // static placeholder
-            rating: 4.5, // static placeholder
-            onTimePercentage: 90, // static placeholder
-            earnings: 50000, // static placeholder
-            pendingPayouts: 5000, // static placeholder
-            kycStatus: "verified", // static placeholder
-            status: "active", // static placeholder
+            type,
+            city: d.city || "N/A",
+            services: d.services || [],
+            joinDate: d.created_time || new Date().toISOString(),
+            rating: avg,
+            reviewCount: count,
+            earnings: wallet.earnings,
+            pendingPayouts: wallet.pendingPayouts,
+            kycStatus: d.kyc_status || "pending",
+            status: d.partner_status || "pending",
           })
-        })
+        }
 
-        snap2.forEach((doc) => {
-          const d = doc.data()
-          data.push({
-            id: doc.id,
-            display_name: d.display_name || "Unknown",
-            phone_number: d.phone_number || "N/A",
-            type: "agency",
-            city: "Mumbai", // static placeholder
-            services: ["Office Cleaning"], // static placeholder
-            joinDate: "2024-02-01", // static placeholder
-            rating: 4.0, // static placeholder
-            onTimePercentage: 85, // static placeholder
-            earnings: 75000, // static placeholder
-            pendingPayouts: 12000, // static placeholder
-            kycStatus: "pending", // static placeholder
-            status: "pending", // static placeholder
-          })
-        })
+        // Process providers and agencies
+        for (const doc of snap1.docs) {
+          await pushPartner(doc, "provider")
+        }
+        for (const doc of snap2.docs) {
+          await pushPartner(doc, "agency")
+        }
 
-        setPartners(data)
+        // Filter only allowed IDs
+        const allowedIds = [
+          "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
+          "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
+          "VxxapfO7l8YM5f6xmFqpThc17eD3",
+        ]
+        setPartners(partnersData.filter((p) => allowedIds.includes(p.id)))
       } catch (error) {
         console.error("Error fetching partners:", error)
       }
@@ -236,12 +271,11 @@ export function PartnerTable() {
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm">Rating: {partner.rating || "N/A"}</span>
+                        <span className="text-sm">Rating: {partner.rating.toFixed(1)}</span>
                         {partner.rating > 0 && <span className="text-yellow-500">★</span>}
                       </div>
                       <div className="flex items-center gap-2">
-                        <Progress value={partner.onTimePercentage} className="w-16 h-1" />
-                        <span className="text-xs text-muted-foreground">{partner.onTimePercentage}%</span>
+                        <span className="text-xs text-muted-foreground">{partner.reviewCount} reviews</span>
                       </div>
                     </div>
                   </TableCell>
@@ -268,7 +302,7 @@ export function PartnerTable() {
                         <DropdownMenuItem asChild>
                           <Link href={`/partners/${partner.id}`}>
                             <Eye className="mr-2 h-4 w-4" />
-                            View Profile
+                            View Details
                           </Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem>

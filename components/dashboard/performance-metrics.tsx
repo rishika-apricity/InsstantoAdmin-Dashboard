@@ -7,8 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import { Clock, Star, TrendingUp } from "lucide-react"
 import { fetchTopServices, type TopService } from "@/lib/queries/top-services"
 import { fetchMostBookedSlots, type TimeSlot } from "@/lib/queries/most-booked-slots"
-import { getFirestoreDb } from "@/lib/firebase"
-import { collection, getDocs, doc, getDoc, DocumentReference } from "firebase/firestore"
+import { fetchNewVsRepeatCustomers } from "@/lib/queries/customer-insights"  // import the helper function
 
 type TimeSlotWithPercentage = TimeSlot & { percentage: number }
 
@@ -16,81 +15,11 @@ const customerMetrics = [
   { label: "Customer Satisfaction", value: "4.8/5", count: "2,156 reviews" },
 ]
 
-export type CustomerInsight = {
-  customerId: string
-  isFirstTime: boolean
-}
-
-export const fetchNewVsRepeatCustomers = async (): Promise<{
-  customerInsights: CustomerInsight[]
-  newCustomerCount: number
-  repeatCustomerCount: number
-}> => {
-  try {
-    const db = getFirestoreDb()
-
-    // Fetch all completed bookings from the "bookings" collection
-    const bookingsQuery = collection(db, "bookings")
-    const snapshot = await getDocs(bookingsQuery)
-
-    const customerIds = new Set<string>()
-    snapshot.docs.forEach((doc) => {
-      const booking = doc.data()
-      const customerRef = booking.customer_id
-      const customerId = customerRef instanceof DocumentReference ? customerRef.id : customerRef
-      customerIds.add(customerId)
-    })
-
-    // Now, for each customer, determine if they are new or repeat
-    const customerInsights: CustomerInsight[] = []
-
-    let newCustomerCount = 0
-    let repeatCustomerCount = 0
-
-    // Fetching customer documents to determine if they are first-time or repeat
-    for (const customerId of customerIds) {
-      const customerDocRef = doc(db, "customers", customerId) // Corrected to use `doc()` for individual documents
-      const customerDoc = await getDoc(customerDocRef)
-
-      if (!customerDoc.exists()) {
-        customerInsights.push({ customerId, isFirstTime: true })
-        newCustomerCount++
-        continue
-      }
-
-      const customerData = customerDoc.data()
-      const customerFirstBookingDate = customerData?.firstBookingDate?.toDate()
-
-      // If no first booking date exists or it's the first booking, classify as new
-      if (!customerFirstBookingDate || customerFirstBookingDate === undefined) {
-        customerInsights.push({ customerId, isFirstTime: true })
-        newCustomerCount++
-      } else {
-        customerInsights.push({ customerId, isFirstTime: false })
-        repeatCustomerCount++
-      }
-    }
-
-    return {
-      customerInsights,
-      newCustomerCount,
-      repeatCustomerCount,
-    }
-  } catch (error) {
-    console.error("Error fetching new vs repeat customers:", error)
-    return {
-      customerInsights: [],
-      newCustomerCount: 0,
-      repeatCustomerCount: 0,
-    }
-  }
-}
-
 export function PerformanceMetrics() {
   const [topServices, setTopServices] = useState<TopService[]>([])
   const [peakHours, setPeakHours] = useState<TimeSlotWithPercentage[]>([])
-  const [newCustomerCount, setNewCustomerCount] = useState<number>(0)
   const [repeatCustomerCount, setRepeatCustomerCount] = useState<number>(0)
+  const [newCustomerCount, setNewCustomerCount] = useState<number>(0)
 
   useEffect(() => {
     const loadServices = async () => {
@@ -112,21 +41,19 @@ export function PerformanceMetrics() {
       setPeakHours(slotsWithPercent)
     }
 
-    // Fetch New vs Repeat Customer Data
-    const loadCustomerInsights = async () => {
-      const { customerInsights, newCustomerCount, repeatCustomerCount } = await fetchNewVsRepeatCustomers()
-
-      // Update the state with new and repeat customer counts
-      setNewCustomerCount(newCustomerCount)
-      setRepeatCustomerCount(repeatCustomerCount)
-
-      // Optionally, you can use `customerInsights` to display more detailed customer data
-      console.log("Customer Insights:", customerInsights)
+    const loadCustomerCounts = async () => {
+      try {
+        const data = await fetchNewVsRepeatCustomers() // fetch counts
+        setRepeatCustomerCount(data.repeatCustomerCount)
+        setNewCustomerCount(data.newCustomerCount)
+      } catch (error) {
+        console.error("Error fetching customer counts:", error)
+      }
     }
 
     loadServices()
     loadSlots()
-    loadCustomerInsights()
+    loadCustomerCounts()  // fetch the counts for repeat and new customers
   }, [])
 
   return (
@@ -200,6 +127,26 @@ export function PerformanceMetrics() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            {/* Add dynamic data for Repeat and New Customers */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+              <div>
+                <p className="text-sm font-medium">Repeat Customers</p>
+                <p className="text-xs text-muted-foreground">{repeatCustomerCount}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-primary">{Math.round((repeatCustomerCount / (repeatCustomerCount + newCustomerCount)) * 100)}%</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+              <div>
+                <p className="text-sm font-medium">New Customers</p>
+                <p className="text-xs text-muted-foreground">{newCustomerCount}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-primary">{Math.round((newCustomerCount / (repeatCustomerCount + newCustomerCount)) * 100)}%</p>
+              </div>
+            </div>
+            {/* Static customer satisfaction metric */}
             {customerMetrics.map((metric, index) => (
               <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                 <div>
@@ -211,27 +158,6 @@ export function PerformanceMetrics() {
                 </div>
               </div>
             ))}
-
-            {/* New and Repeat Customer Metrics */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-              <div>
-                <p className="text-sm font-medium">Repeat Customers</p>
-                <p className="text-xs text-muted-foreground">{repeatCustomerCount} customers</p>
-              </div>
-              <div className="text-right">
-                <p className="text-lg font-bold text-primary">{Math.round((repeatCustomerCount / (newCustomerCount + repeatCustomerCount)) * 100)}%</p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-              <div>
-                <p className="text-sm font-medium">New Customers</p>
-                <p className="text-xs text-muted-foreground">{newCustomerCount} customers</p>
-              </div>
-              <div className="text-right">
-                <p className="text-lg font-bold text-primary">{Math.round((newCustomerCount / (newCustomerCount + repeatCustomerCount)) * 100)}%</p>
-              </div>
-            </div>
           </div>
         </CardContent>
       </Card>

@@ -36,7 +36,8 @@ type BookingDoc = {
   package_id?: string;
   amount_paid?: number;
   payment_type?: string;
-  booking_date?: Timestamp;
+  date?: Timestamp;
+  timeSlot?: Timestamp;
   booking_time?: string;
   bookingAddress?: string;
   city?: string;
@@ -75,6 +76,9 @@ export function BookingTable() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   
+  const from = Timestamp.fromDate(new Date('2025-08-01T00:00:00Z')) // August 1, 2025
+  const to = Timestamp.fromDate(new Date('2025-08-30T23:59:59Z')) // August 30, 2025
+  
   // Pagination for filtered results
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -94,6 +98,8 @@ export function BookingTable() {
         const allBookingsQuery = query(
           collection(db, "bookings"),
           where("provider_id", "in", providerRefs),
+          // where("booking_date", ">=", from),
+          // where("booking_date", "<=", to),
           orderBy("booking_date", "desc")
         );
 
@@ -147,8 +153,8 @@ export function BookingTable() {
           // Add new bookings and sort by date
           const combined = [...newDocs, ...prev];
           return combined.sort((a, b) => {
-            const dateA = a.booking_date?.toDate?.() || new Date(0);
-            const dateB = b.booking_date?.toDate?.() || new Date(0);
+            const dateA = a.date?.toDate?.() || new Date(0);
+            const dateB = b.date?.toDate?.() || new Date(0);
             return dateB.getTime() - dateA.getTime();
           });
         });
@@ -259,11 +265,14 @@ export function BookingTable() {
 
   // ----- Helper Functions -----
   const normalize = (v: unknown) => (v ?? "").toString().toLowerCase();
-  const displayDate = (b: BookingDoc): Date | null => {
-    const t = b.booking_date;
-    return t?.toDate ? t.toDate() : null;
-  };
-
+const displayDate = (b: BookingDoc): Date | null => {
+  const t = b.date; // Use the `date` field instead of `booking_date`
+  return t?.toDate ? t.toDate() : null;
+};
+const displayTimeSlot = (b: BookingDoc): Date | null => {
+  const timeSlot = b.timeSlot; // Use the `timeSlot` field
+  return timeSlot ? timeSlot.toDate() : null;
+};
   const getServicesForBooking = (booking: BookingDoc): CartService[] => {
     if (!booking.subCategoryCart_id) return [];
     return servicesMap[booking.subCategoryCart_id] || [];
@@ -415,6 +424,7 @@ export function BookingTable() {
                 <TableHead>Services</TableHead>
                 <TableHead>Partner</TableHead>
                 <TableHead>Date & Time</TableHead>
+                <TableHead>Time Slot</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Payment</TableHead>
@@ -485,7 +495,8 @@ export function BookingTable() {
                         )}
                       </TableCell>
                       <TableCell>{prov.name || "—"}</TableCell>
-                      <TableCell>{fmtDate(d)}</TableCell>
+                      <TableCell>{fmtDate(displayDate(b))}</TableCell>
+                      <TableCell>{fmtDate(displayTimeSlot(b))}</TableCell>
                       <TableCell>
                         <Badge className={statusColors[b.status ?? ""] || statusColors.default}>
                           {(b.status ?? "—").replace("-", " ")}

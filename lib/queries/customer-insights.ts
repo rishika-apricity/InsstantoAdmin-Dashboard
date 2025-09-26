@@ -1,73 +1,43 @@
-import { getFirestoreDb } from "@/lib/firebase"
-import {
-    collection,
-    getDocs,
-    getDoc,
-    DocumentReference,
-    DocumentData,
-    query,
-    where,
-} from "firebase/firestore"
+import { getFirestore } from "firebase/firestore";  // Ensure correct Firestore import
+import { getDocs, collection } from "firebase/firestore";  // Import necessary Firestore methods
 
-export type CustomerInsight = {
-    customerId: string
-    isFirstTime: boolean
-}
+export async function fetchNewVsRepeatCustomers(): Promise<{ newCustomerCount: number, repeatCustomerCount: number }> {
+    const db = getFirestore();  // Initialize Firestore using the modular SDK
 
-export async function fetchNewVsRepeatCustomers(year: string, month: string): Promise<CustomerInsight[]> {
     try {
-        const db = getFirestoreDb()
+        // Query Firestore for all bookings
+        const bookingsSnap = await getDocs(collection(db, "bookings"));  // Correct Firestore method for fetching documents
 
-        // Month window (UTC)
-        const startDate = new Date(`${year}-${month}-01T00:00:00.000Z`)
-        const endDate = new Date(startDate)
-        endDate.setMonth(endDate.getMonth() + 1)
+        const customersMap: Record<string, number> = {};  // to store customer booking count
 
-        // Query to fetch bookings in the target month with status "Service_Completed"
-        const bookingsQuery = query(
-            collection(db, "bookings"),
-            where("status", "==", "Service_Completed"),
-            where("date", ">=", startDate),
-            where("date", "<", endDate)
-        )
+        // Loop through all bookings and count unique customers
+        bookingsSnap.forEach((doc) => {  // doc has type `QueryDocumentSnapshot`
+            const booking = doc.data();
+            const customerId = booking.customer_id;  // Assuming customer_id is a field in bookings
 
-        const snapshot = await getDocs(bookingsQuery)
-
-        const customerIds = new Set<string>()
-        const customerFirstBooking: Record<string, Date> = {}
-
-        // Process each booking to determine customer first-time or repeat status
-        snapshot.docs.forEach((doc) => {
-            const booking = doc.data()
-            const customerRef: DocumentReference<DocumentData> | string = booking.customer_id
-            const customerId = customerRef instanceof DocumentReference ? customerRef.id : customerRef
-
-            customerIds.add(customerId)
-
-            // Track the first booking date for each customer
-            if (!customerFirstBooking[customerId]) {
-                customerFirstBooking[customerId] = booking.date.toDate()
+            if (customerId) {
+                // Count the number of bookings per customer
+                customersMap[customerId] = (customersMap[customerId] || 0) + 1;
             }
-        })
+        });
 
-        // Determine new vs repeat customers based on their first booking
-        const customerInsights: CustomerInsight[] = []
+        // Separate new and repeat customers based on their booking count
+        let newCustomerCount = 0;
+        let repeatCustomerCount = 0;
 
-        for (const customerId of customerIds) {
-            const firstBookingDate = customerFirstBooking[customerId]
-
-            // If the first booking date falls in the current month, it's a first-time customer
-            const isFirstTime = firstBookingDate >= startDate && firstBookingDate < endDate
-
-            customerInsights.push({
-                customerId,
-                isFirstTime,
-            })
+        // Count customers based on booking count
+        for (const customerId in customersMap) {
+            if (customersMap[customerId] === 1) {
+                newCustomerCount += 1;
+            } else {
+                repeatCustomerCount += 1;
+            }
         }
 
-        return customerInsights
+        // Return the counts
+        return { newCustomerCount, repeatCustomerCount };
     } catch (error) {
-        console.error("Error fetching new vs repeat customers:", error)
-        return []
+        console.error("Error fetching new vs repeat customers:", error);
+        throw error;
     }
 }

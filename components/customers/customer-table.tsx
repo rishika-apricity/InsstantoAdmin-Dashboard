@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation" // Move this import here
 import {
   collection,
   DocumentData,
@@ -19,7 +20,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, ChevronLeft, ChevronRight, Search, Users, Phone } from "lucide-react"
+import { Loader2, ChevronLeft, ChevronRight, Search, Users, Phone, Eye } from "lucide-react" // Add Eye icon
 
 type LatLng = { latitude: number; longitude: number } | { lat: number; lng: number } | null
 
@@ -47,6 +48,7 @@ const PAGE_SIZE = 20
 
 export function CustomerTable() {
   const db = getFirestoreDb()
+  const router = useRouter() // Move useRouter inside the component
 
   // All data state
   const [allCustomers, setAllCustomers] = useState<CustomerDoc[]>([])
@@ -268,12 +270,13 @@ export function CustomerTable() {
                     <TableHead>Membership</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Created</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedCustomers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                      <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-8">
                         {filteredCustomers.length === 0 ? (
                           search ?
                             "No customers found matching your search criteria." :
@@ -299,7 +302,7 @@ export function CustomerTable() {
                           </div>
                         </TableCell>
                         <TableCell>{c.email ?? "—"}</TableCell>
-                        <TableCell className="font-mono">{c.referralBy ?? "—"}</TableCell>
+                        <TableCell className="font-mono">{fmtPhone(c)}</TableCell>
                         <TableCell>
                           <div className="flex gap-1 flex-wrap">
                             {c.userType?.customer && (
@@ -331,6 +334,17 @@ export function CustomerTable() {
                         </TableCell>
                         <TableCell className="font-mono text-xs">{fmtLatLng(c.location ?? null)}</TableCell>
                         <TableCell className="text-xs">{fmtDate(c.created_time)}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => router.push(`/customers/${c.id}`)}
+                            className="flex items-center gap-2"
+                          >
+                            <Eye className="h-4 w-4" />
+                            View
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
