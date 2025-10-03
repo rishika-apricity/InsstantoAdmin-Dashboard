@@ -1,3 +1,5 @@
+"use client"
+
 import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { LucideIcon } from "lucide-react"
@@ -19,6 +21,9 @@ interface GraphPlaceholderProps {
 type RevenuePoint = {
   month: string
   revenue: number
+  walletUsed: number
+  discount: number
+  netRevenue: number
   changePct?: number | null
   changeDir?: "up" | "down" | "flat"
   changeLabel?: string
@@ -37,7 +42,6 @@ export function GraphPlaceholder({
   const fetchRevenueData = async () => {
     const db = getFirestoreDb()
 
-    // Provider/Customer document IDs to include
     const providerIds = [
       "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
       "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
@@ -45,7 +49,6 @@ export function GraphPlaceholder({
     ]
     const providerRefs = providerIds.map((id) => doc(db, "customer", id))
 
-    // Build 6 monthly buckets (oldest → current)
     const now = new Date()
     const startOldest = new Date(now.getFullYear(), now.getMonth() - 5, 1)
     const endNewest = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -56,7 +59,6 @@ export function GraphPlaceholder({
       return { label, start, end }
     })
 
-    // Query bookings within range, completed, and by these providers
     const bookingsRef = collection(db, "bookings")
     const q = query(
       bookingsRef,
@@ -67,29 +69,38 @@ export function GraphPlaceholder({
     )
     const snap = await getDocs(q)
 
-    // Sum revenue per month
     const revenueByMonth: RevenuePoint[] = monthBuckets.map((m) => ({
       month: m.label,
       revenue: 0,
+      walletUsed: 0,
+      discount: 0,
+      netRevenue: 0,
     }))
 
     snap.forEach((docSnap) => {
       const b = docSnap.data() as any
       const when: Date = b?.date?.toDate ? b.date.toDate() : b?.date ? new Date(b.date) : null
       if (!when) return
+
       const amt = Number(b?.amount_paid ?? 0) || 0
+      const wallet = Number(b?.walletAmountUsed ?? 0) || 0
+      const discount = Number(b?.discount_amount ?? 0) || 0
+
       const idx = monthBuckets.findIndex((m) => when >= m.start && when < m.end)
-      if (idx !== -1) revenueByMonth[idx].revenue += amt
+      if (idx !== -1) {
+        revenueByMonth[idx].revenue += amt
+        revenueByMonth[idx].walletUsed += wallet
+        revenueByMonth[idx].discount += discount
+        revenueByMonth[idx].netRevenue += amt - wallet - discount
+      }
     })
 
-    // Add percentage change, arrow label & direction
     const withChanges: RevenuePoint[] = revenueByMonth.map((d, i, arr) => {
       if (i === 0) return { ...d, changePct: null, changeDir: "flat", changeLabel: "—" }
       const prev = arr[i - 1].revenue
       if (prev <= 0) return { ...d, changePct: null, changeDir: "flat", changeLabel: "—" }
 
       const pct = ((d.revenue - prev) / prev) * 100
-      // 1 decimal for small changes, whole numbers for bigger changes
       const roundedAbs =
         Math.abs(pct) < 10 ? Math.round(Math.abs(pct) * 10) / 10 : Math.round(Math.abs(pct))
       const dir: "up" | "down" | "flat" = pct > 0 ? "up" : pct < 0 ? "down" : "flat"
@@ -113,7 +124,6 @@ export function GraphPlaceholder({
       maximumFractionDigits: 0,
     }).format(v)
 
-  // Custom renderer for the % change labels above each dot
   const renderChangeLabel = (props: any) => {
     const { x, y, index, value } = props
     if (value == null || index == null) return null
@@ -125,6 +135,33 @@ export function GraphPlaceholder({
         {value}
       </text>
     )
+  }
+
+  // ✅ Custom Tooltip
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const p = payload[0].payload as RevenuePoint
+
+      const change =
+        p?.changeDir === "up"
+          ? `▲ ${Math.abs(p.changePct ?? 0).toFixed(1)}%`
+          : p?.changeDir === "down"
+          ? `▼ ${Math.abs(p.changePct ?? 0).toFixed(1)}%`
+          : "—"
+
+      return (
+        <div className="bg-white border border-gray-300 p-2 rounded shadow">
+          <p className="font-semibold">Month: {label}</p>
+          <p style={{ color: "#8884d8" }}>
+            Revenue: {formatCurrency(p.revenue)} ({change})
+          </p>
+          <p style={{ color: "#8884d8" }}>
+            Net Revenue: {formatCurrency(p.netRevenue)}
+          </p>
+        </div>
+      )
+    }
+    return null
   }
 
   return (
@@ -144,19 +181,7 @@ export function GraphPlaceholder({
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis tickFormatter={(v) => formatCurrency(v).replace("₹", "₹ ")} />
-                <Tooltip
-                  formatter={(value, name, { payload }) => {
-                    const p = payload as RevenuePoint
-                    const change =
-                      p?.changeDir === "up"
-                        ? `▲ ${Math.abs(p.changePct ?? 0).toFixed(1)}%`
-                        : p?.changeDir === "down"
-                        ? `▼ ${Math.abs(p.changePct ?? 0).toFixed(1)}%`
-                        : "—"
-                    return [`${formatCurrency(Number(value))} (${change})`, "Revenue"]
-                  }}
-                  labelFormatter={(label) => `Month: ${label}`}
-                />
+                <Tooltip content={<CustomTooltip />} />
                 <Line
                   type="monotone"
                   dataKey="revenue"
@@ -165,7 +190,6 @@ export function GraphPlaceholder({
                   dot={{ r: 6, stroke: "#8884d8", strokeWidth: 2, fill: "#8884d8" }}
                   activeDot={{ r: 7 }}
                 >
-                  {/* % change labels above each point */}
                   <LabelList dataKey="changeLabel" content={renderChangeLabel} />
                 </Line>
               </LineChart>

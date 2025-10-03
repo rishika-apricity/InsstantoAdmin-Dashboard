@@ -1,11 +1,10 @@
 import {
     collection,
-    getCountFromServer,
     query,
     where,
-    doc,
     getDocs,
-    QueryConstraint,
+    Timestamp,
+    doc
 } from "firebase/firestore"
 import { getFirestoreDb } from "@/lib/firebase"
 
@@ -24,84 +23,60 @@ export type BookingStats = {
     perOrderValue: number
 }
 
-export async function fetchBookingStats(
-    from?: Date,
-    to?: Date
-): Promise<BookingStats> {
+export async function fetchBookingStats(): Promise<BookingStats> {
     const db = getFirestoreDb()
+    const from = Timestamp.fromDate(new Date('2025-08-01T00:00:00Z')) // August 1, 2025
+    const to = Timestamp.fromDate(new Date('2025-08-30T23:59:59Z')) // August 30, 2025
 
-    const customerIds = [
+    // Provider IDs you want to filter by
+    const providerIds = [
         "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
         "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
         "VxxapfO7l8YM5f6xmFqpThc17eD3",
     ]
-    const customerRefs = customerIds.map((id) => doc(db, "customer", id))
+    const providerRefs = providerIds.map((id) => doc(db, "customer", id))
 
     const bookingsCol = collection(db, "bookings")
 
-    // 🔹 date filters for bookings
-    const bookingDateConstraints: QueryConstraint[] = []
-    if (from) bookingDateConstraints.push(where("date", ">=", from))
-    if (to) bookingDateConstraints.push(where("date", "<=", to))
+    // Base filter (date + provider)
+    const baseFilters = [
+        where("provider_id", "in", providerRefs),
+        // where("booking_date", ">=", from),
+        // where("booking_date", "<=", to),
+    ]
 
-    // queries for bookings
-    const totalBookingsQuery = query(
-        bookingsCol,
-        where("provider_id", "in", customerRefs),
-        ...bookingDateConstraints
-    )
+    // Total bookings
+    const queryRef = query(bookingsCol, ...baseFilters)
+    const snapshot = await getDocs(queryRef)
+    const totalBookings = snapshot.size
 
-    const pendingQuery = query(
-        bookingsCol,
-        where("status", "==", "Pending"),
-        ...bookingDateConstraints
-    )
+    // Pending bookings
+    const pendingQuery = query(bookingsCol, ...baseFilters, where("status", "==", "Pending"))
+    const pendingSnapshot = await getDocs(pendingQuery)
+    const pendingBookings = pendingSnapshot.size
 
-    const confirmedQuery = query(
-        bookingsCol,
-        where("provider_id", "in", customerRefs),
-        where("status", "==", "Accepted"),
-        ...bookingDateConstraints
-    )
+    // Confirmed bookings
+    const confirmedQuery = query(bookingsCol, ...baseFilters, where("status", "==", "Accepted"))
+    const confirmedSnapshot = await getDocs(confirmedQuery)
+    const confirmedBookings = confirmedSnapshot.size
 
-    const completedQuery = query(
-        bookingsCol,
-        where("provider_id", "in", customerRefs),
-        where("status", "==", "Service_Completed"),
-        ...bookingDateConstraints
-    )
+    // Completed bookings
+    const completedQuery = query(bookingsCol, ...baseFilters, where("status", "==", "Service_Completed"))
+    const completedSnapshot = await getDocs(completedQuery)
+    const completedBookings = completedSnapshot.size
 
-    const cancelledQuery = query(
-        bookingsCol,
-        where("provider_id", "in", customerRefs),
-        where("status", "==", "Booking_Cancelled by true"),
-        ...bookingDateConstraints
-    )
+    // Cancelled bookings
+    const cancelledQuery = query(bookingsCol, ...baseFilters, where("status", "==", "Booking_Cancelled by true"))
+    const cancelledSnapshot = await getDocs(cancelledQuery)
+    const cancelledBookings = cancelledSnapshot.size
 
-    // run booking queries
-    const [totalSnapshot, pendingSnap, confirmedSnap, completedSnap, cancelledSnap] =
-        await Promise.all([
-            getCountFromServer(totalBookingsQuery),
-            getCountFromServer(pendingQuery),
-            getCountFromServer(confirmedQuery),
-            getCountFromServer(completedQuery),
-            getCountFromServer(cancelledQuery),
-        ])
-
-    const total = Number(totalSnapshot.data().count || 0)
-    const pending = Number(pendingSnap.data().count || 0)
-    const confirmed = Number(confirmedSnap.data().count || 0)
-    const completed = Number(completedSnap.data().count || 0)
-    const cancelled = Number(cancelledSnap.data().count || 0)
-
-    // 🔹 revenue & offers
-    const completedBookingsSnapshot = await getDocs(completedQuery)
+    // Revenue calculations
     let totalRevenue = 0
     let totalOfferAmount = 0
     let totalWalletUsed = 0
     let totalDiscount = 0
 
-    completedBookingsSnapshot.forEach((docSnap) => {
+    completedSnapshot.forEach((docSnap) => {
         const data = docSnap.data()
         totalRevenue += data.amount_paid || 0
         totalWalletUsed += data.walletAmountUsed || 0
@@ -109,30 +84,28 @@ export async function fetchBookingStats(
         totalOfferAmount += (data.discount_amount || 0) + (data.walletAmountUsed || 0)
     })
 
-    // 🔹 net revenue
     const netRevenue = totalRevenue - totalWalletUsed - totalDiscount
+    const perOrderValue = completedBookings > 0 ? totalRevenue / completedBookings : 0
 
-    // 🔹 per order value
-    const perOrderValue = completed > 0 ? totalRevenue / completed : 0
-
-    // 🔹 total customers (apply same date filter on created_time)
-    const customerDateConstraints: QueryConstraint[] = [where("userType.customer", "==", true)]
-    if (from) customerDateConstraints.push(where("created_time", ">=", from))
-    if (to) customerDateConstraints.push(where("created_time", "<=", to))
-
-    const customerQuery = query(collection(db, "customer"), ...customerDateConstraints)
-    const customerSnap = await getCountFromServer(customerQuery)
-    const totalCustomers = Number(customerSnap.data().count || 0)
+    // Total customers (with same date filter)
+    const customerQuery = query(
+        collection(db, "customer"),
+        where("userType.customer", "==", true),
+        // where("created_time", ">=", from),
+        // where("created_time", "<=", to)
+    )
+    const customerSnap = await getDocs(customerQuery)
+    const totalCustomers = customerSnap.size
 
     const averageRating = 5 // placeholder
-    const completionRate = total > 0 ? (completed / total) * 100 : 0
+    const completionRate = totalBookings > 0 ? (completedBookings / totalBookings) * 100 : 0
 
     return {
-        totalBookings: total,
-        pendingBookings: pending,
-        confirmedBookings: confirmed,
-        completedBookings: completed,
-        cancelledBookings: cancelled,
+        totalBookings,
+        pendingBookings,
+        confirmedBookings,
+        completedBookings,
+        cancelledBookings,
         totalRevenue,
         averageRating,
         completionRate: Number(completionRate.toFixed(1)),

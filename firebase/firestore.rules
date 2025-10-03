@@ -33,7 +33,7 @@ service cloud.firestore {
     }
 
     match /customers/{docId} {
-      allow read: if isAuthenticated() && (hasPermission('customers:view') || hasPermission('customers:view_limited'));
+      allow read: if isAuthenticated() && hasPermission('customers:view') ;
       allow write: if isAuthenticated() && hasPermission('customers:write');
     }
 

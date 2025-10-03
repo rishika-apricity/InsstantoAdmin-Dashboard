@@ -1,82 +1,112 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { CreditCard, TrendingUp, RefreshCw, AlertCircle, DollarSign } from "lucide-react"
-import type { PaymentStats } from "@/types/payment"
+"use client";
 
-interface PaymentStatsProps {
-  stats: PaymentStats
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Wallet,
+  CheckCircle,
+  XCircle,
+  RotateCcw,
+  IndianRupee,
+  Banknote,
+  Building,
+} from "lucide-react";
+
+interface PaymentStats {
+  totalPayments: number;
+  successfulPayments: number;
+  failedPayments: number;
+  refundedPayments: number;
+  totalAmount: number;
+  totalSettlements: number;
+  totalSettlementAmount: number;
 }
 
-export function PaymentStatsCards({ stats }: PaymentStatsProps) {
-  const successRate = ((stats.successfulPayments / stats.totalPayments) * 100).toFixed(1)
-  const refundRate = ((stats.refundedPayments / stats.totalPayments) * 100).toFixed(1)
+export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
+  const successRate =
+    stats.totalPayments > 0
+      ? ((stats.successfulPayments / stats.totalPayments) * 100).toFixed(1)
+      : 0;
+
+  const refundRate =
+    stats.totalPayments > 0
+      ? ((stats.refundedPayments / stats.totalPayments) * 100).toFixed(1)
+      : 0;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-      <Card className="border-l-4 border-l-blue-500">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Payments</CardTitle>
-          <CreditCard className="h-4 w-4 text-blue-500" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-blue-600">{stats.totalPayments.toLocaleString()}</div>
-          <p className="text-xs text-muted-foreground">All payment transactions</p>
-        </CardContent>
+    <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7">
+      {/* Total Payments */}
+      <Card className="p-4 border-l-4 border-blue-500 shadow-sm flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Wallet className="h-6 w-6 text-blue-500" />
+          <h2 className="text-sm text-muted-foreground">Total Payments</h2>
+        </div>
+        <p className="text-xl font-bold text-blue-600">{stats.totalPayments}</p>
       </Card>
 
-      <Card className="border-l-4 border-l-green-500">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Successful</CardTitle>
-          <TrendingUp className="h-4 w-4 text-green-500" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-green-600">{stats.successfulPayments.toLocaleString()}</div>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="bg-green-100 text-green-700">
-              {successRate}%
-            </Badge>
-            <p className="text-xs text-muted-foreground">Success rate</p>
-          </div>
-        </CardContent>
+      {/* Successful */}
+      <Card className="p-4 border-l-4 border-green-500 shadow-sm flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="h-6 w-6 text-green-500" />
+          <h2 className="text-sm text-muted-foreground">Successful</h2>
+        </div>
+        <p className="text-xl font-bold text-green-600">{stats.successfulPayments}</p>
+        <Badge className="w-fit bg-green-100 text-green-700 text-xs">
+          {successRate}% success rate
+        </Badge>
       </Card>
 
-      <Card className="border-l-4 border-l-red-500">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Failed</CardTitle>
-          <AlertCircle className="h-4 w-4 text-red-500" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-red-600">{stats.failedPayments.toLocaleString()}</div>
-          <p className="text-xs text-muted-foreground">Failed transactions</p>
-        </CardContent>
+      {/* Failed */}
+      <Card className="p-4 border-l-4 border-red-500 shadow-sm flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <XCircle className="h-6 w-6 text-red-500" />
+          <h2 className="text-sm text-muted-foreground">Failed</h2>
+        </div>
+        <p className="text-xl font-bold text-red-600">{stats.failedPayments}</p>
       </Card>
 
-      <Card className="border-l-4 border-l-orange-500">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Refunded</CardTitle>
-          <RefreshCw className="h-4 w-4 text-orange-500" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-orange-600">{stats.refundedPayments.toLocaleString()}</div>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="bg-orange-100 text-orange-700">
-              {refundRate}%
-            </Badge>
-            <p className="text-xs text-muted-foreground">Refund rate</p>
-          </div>
-        </CardContent>
+      {/* Refunded */}
+      <Card className="p-4 border-l-4 border-orange-500 shadow-sm flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <RotateCcw className="h-6 w-6 text-orange-500" />
+          <h2 className="text-sm text-muted-foreground">Refunded</h2>
+        </div>
+        <p className="text-xl font-bold text-orange-600">{stats.refundedPayments}</p>
+        <Badge className="w-fit bg-orange-100 text-orange-700 text-xs">
+          {refundRate}% refund rate
+        </Badge>
       </Card>
 
-      <Card className="border-l-4 border-l-purple-500">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
-          <DollarSign className="h-4 w-4 text-purple-500" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-purple-600">₹{stats.totalAmount.toLocaleString()}</div>
-          <p className="text-xs text-muted-foreground">Total transaction value</p>
-        </CardContent>
+      {/* Total Amount */}
+      <Card className="p-4 border-l-4 border-purple-500 shadow-sm flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <IndianRupee className="h-6 w-6 text-purple-500" />
+          <h2 className="text-sm text-muted-foreground">Total Amount</h2>
+        </div>
+        <p className="text-xl font-bold text-purple-600">
+          ₹{stats.totalAmount.toLocaleString("en-IN")}
+        </p>
+      </Card>
+
+      {/* Total Settlements */}
+      <Card className="p-4 border-l-4 border-teal-500 shadow-sm flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Building className="h-6 w-6 text-teal-500" />
+          <h2 className="text-sm text-muted-foreground">Settlements</h2>
+        </div>
+        <p className="text-xl font-bold text-teal-600">{stats.totalSettlements}</p>
+      </Card>
+
+      {/* Settlement Amount */}
+      <Card className="p-4 border-l-4 border-indigo-500 shadow-sm flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Banknote className="h-6 w-6 text-indigo-500" />
+          <h2 className="text-sm text-muted-foreground">Settlement Amount</h2>
+        </div>
+        <p className="text-xl font-bold text-indigo-600">
+          ₹{stats.totalSettlementAmount.toLocaleString("en-IN")}
+        </p>
       </Card>
     </div>
-  )
+  );
 }
