@@ -1,70 +1,68 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, UserPlus, DollarSign, Star, Calendar } from "lucide-react"
-import { mockCustomers } from "@/lib/queries/customers"
+"use client";
+
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Users, UserPlus, Calendar, ListChecks } from "lucide-react";
+import { fetchCustomerStats } from "@/lib/queries/customers"; // 👈 we’ll use the function I wrote for you earlier
+
+type Stats = {
+  totalCustomers: number;
+  newCustomersToday: number;
+  customersWithOneBooking: number;
+  customersWithMultipleBookings: number;
+};
 
 export function CustomerStats() {
-  const totalCustomers = mockCustomers.length
-  const activeCustomers = mockCustomers.filter((c) => c.status === "active").length
-  const newThisMonth = mockCustomers.filter((c) => {
-    const signupDate = new Date(c.signupDate)
-    const thisMonth = new Date()
-    return signupDate.getMonth() === thisMonth.getMonth() && signupDate.getFullYear() === thisMonth.getFullYear()
-  }).length
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const averageLTV = mockCustomers.reduce((sum, c) => sum + c.lifetimeValue, 0) / totalCustomers
-  const averageRating = mockCustomers.reduce((sum, c) => sum + c.averageRating, 0) / totalCustomers
+  useEffect(() => {
+    async function loadStats() {
+      const data = await fetchCustomerStats();
+      setStats(data);
+      setLoading(false);
+    }
+    loadStats();
+  }, []);
 
-  const topSpenders = mockCustomers.sort((a, b) => b.lifetimeValue - a.lifetimeValue).slice(0, 3)
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(amount)
+  if (loading) {
+    return <div className="text-sm text-muted-foreground">Loading customer stats...</div>;
   }
 
-  const stats = [
+  const kpiCards = [
     {
-      title: "Total Customers",
-      value: totalCustomers.toString(),
+      title: "Total Sign-Ups",
+      value: stats?.totalCustomers.toString() || "0",
       icon: Users,
       color: "text-primary",
       description: "All registered customers",
     },
     {
-      title: "Active Customers",
-      value: activeCustomers.toString(),
-      icon: UserPlus,
-      color: "text-green-600",
-      description: "Currently active users",
-    },
-    {
-      title: "New This Month",
-      value: newThisMonth.toString(),
+      title: "Today's Sign_Ups",
+      value: stats?.newCustomersToday.toString() || "0",
       icon: Calendar,
+      color: "text-green-600",
+      description: "New signups today",
+    },
+    {
+      title: "Total New Customers",
+      value: stats?.customersWithOneBooking.toString() || "0",
+      icon: UserPlus,
       color: "text-secondary",
-      description: "Recent signups",
+      description: "Customers with exactly 1 booking",
     },
     {
-      title: "Average LTV",
-      value: formatCurrency(averageLTV),
-      icon: DollarSign,
-      color: "text-chart-3",
-      description: "Lifetime value per customer",
-    },
-    {
-      title: "Average Rating",
-      value: averageRating.toFixed(1),
-      icon: Star,
+      title: "Total Repeated Customers",
+      value: stats?.customersWithMultipleBookings.toString() || "0",
+      icon: ListChecks,
       color: "text-yellow-600",
-      description: "Customer satisfaction",
+      description: "Customers with multiple bookings",
     },
-  ]
+  ];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6">
-      {stats.map((stat) => (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+      {kpiCards.map((stat) => (
         <Card key={stat.title}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
@@ -77,5 +75,5 @@ export function CustomerStats() {
         </Card>
       ))}
     </div>
-  )
+  );
 }

@@ -16,17 +16,20 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search, MoreHorizontal, Eye, Edit, CheckCircle, XCircle, DollarSign, Pause } from "lucide-react"
 import Link from "next/link"
-import { collection, getDocs, query, where, doc } from "firebase/firestore"
+import { collection, getDocs, query, where, doc, Timestamp } from "firebase/firestore"
 import { getFirestoreDb } from "@/lib/firebase"
 
 // Define Partner type
 type Partner = {
   id: string
+  uid?: string
   display_name: string
   phone_number: string
+  contact_no: number
   type: "provider" | "agency"
   city: string
   services: string[]
+  created_time?: Timestamp
   joinDate: string
   rating: number
   reviewCount: number
@@ -41,29 +44,77 @@ export function PartnerTable() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
-  useEffect(() => {
-    const fetchPartners = async () => {
-      try {
-        const db = getFirestoreDb()
+useEffect(() => {
+  const fetchPartners = async () => {
+    try {
+      const db = getFirestoreDb()
 
-        // Fetch partners
-        const q1 = query(
-          collection(db, "customer"),
-          where("userType.provider", "==", true),
-          where("partner_status", "==", "Onboarded")
+      // --- Step 1: Fetch partners (providers + agencies) ---
+      const q1 = query(
+        collection(db, "customer"),
+        where("userType.provider", "==", true),
+        where("partner_status", "==", "Onboarded")
+      )
+      const q2 = query(
+        collection(db, "customer"),
+        where("userType.AgencyPartner", "==", true),
+        where("partner_status", "==", "Onboarded")
+      )
+
+      const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)])
+      const allPartners = [...snap1.docs, ...snap2.docs]
+
+      // Collect partner IDs
+      const partnerIds = allPartners.map((d) => d.id)
+
+      // --- Step 2: Fetch Wallet + Form data in parallel ---
+      const walletQueries = []
+      for (let i = 0; i < partnerIds.length; i += 10) {
+        walletQueries.push(
+          getDocs(
+            query(
+              collection(db, "Wallet_Overall"),
+              where("service_partner_id", "in", partnerIds.slice(i, i + 10).map(id => doc(db, "customer", id)))
+            )
+          )
         )
-        const q2 = query(
-          collection(db, "customer"),
-          where("userType.AgencyPartner", "==", true),
-          where("partner_status", "==", "Onboarded")
+      }
+
+      const formQueries = []
+      for (let i = 0; i < partnerIds.length; i += 10) {
+        formQueries.push(
+          getDocs(
+            query(
+              collection(db, "form_details"),
+              where("provider_ref", "in", partnerIds.slice(i, i + 10).map(id => doc(db, "customer", id)))
+            )
+          )
         )
+      }
 
-        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)])
+      // --- Step 3: Fetch reviews for all partners in parallel ---
+      const reviewQueries = []
+      for (let i = 0; i < partnerIds.length; i += 10) {
+        reviewQueries.push(
+          getDocs(
+            query(
+              collection(db, "reviews"),
+              where("partnerId", "in", partnerIds.slice(i, i + 10).map(id => doc(db, "customer", id)))
+            )
+          )
+        )
+      }
 
-        // Fetch Wallet data
-        const walletSnap = await getDocs(collection(db, "Wallet_Overall"))
-        const walletMap: Record<string, any> = {}
-        walletSnap.forEach((doc) => {
+      const [walletSnaps, formSnaps, reviewSnaps] = await Promise.all([
+        Promise.all(walletQueries),
+        Promise.all(formQueries),
+        Promise.all(reviewQueries),
+      ])
+
+      // --- Step 4: Build maps ---
+      const walletMap: Record<string, { earnings: number; pendingPayouts: number }> = {}
+      walletSnaps.flat().forEach((snap) =>
+        snap.forEach((doc) => {
           const d = doc.data()
           if (d.service_partner_id?.id) {
             walletMap[d.service_partner_id.id] = {
@@ -72,76 +123,84 @@ export function PartnerTable() {
             }
           }
         })
+      )
 
-        const partnersData: Partner[] = []
-
-        // Helper: compute average rating + count for a partner
-        const getPartnerRating = async (partnerId: string) => {
-          const reviewsQuery = query(
-            collection(db, "reviews"),
-            where("partnerId", "==", doc(db, "customer", partnerId))
-          )
-          const reviewsSnap = await getDocs(reviewsQuery)
-          if (reviewsSnap.empty) return { avg: 0, count: 0 }
-
-          let total = 0
-          let count = 0
-          reviewsSnap.forEach((review) => {
-            const r = review.data()
-            if (r.partnerRating) {
-              total += r.partnerRating
-              count++
-            }
-          })
-
-          return { avg: count > 0 ? total / count : 0, count }
-        }
-
-        const pushPartner = async (doc: any, type: "provider" | "agency") => {
+      const serviceMap: Record<string, string> = {}
+      formSnaps.flat().forEach((snap) =>
+        snap.forEach((doc) => {
           const d = doc.data()
-          const wallet = walletMap[doc.id] || { earnings: 0, pendingPayouts: 0 }
+          if (d.provider_ref?.id) {
+            serviceMap[d.provider_ref.id] = d.serviceOpt || "N/A"
+          }
+        })
+      )
 
-          const { avg, count } = await getPartnerRating(doc.id)
+      const reviewMap: Record<string, { avg: number; count: number }> = {}
+      reviewSnaps.flat().forEach((snap) =>
+        snap.forEach((doc) => {
+          const r = doc.data()
+          const partnerId = r.partnerId?.id
+          if (!partnerId) return
+          if (!reviewMap[partnerId]) reviewMap[partnerId] = { avg: 0, count: 0 }
 
-          partnersData.push({
-            id: doc.id,
-            display_name: d.display_name || "Unknown",
-            phone_number: d.phone_number || "N/A",
-            type,
-            city: d.city || "N/A",
-            services: d.services || [],
-            joinDate: d.created_time || new Date().toISOString(),
-            rating: avg,
-            reviewCount: count,
-            earnings: wallet.earnings,
-            pendingPayouts: wallet.pendingPayouts,
-            kycStatus: d.kyc_status || "pending",
-            status: d.partner_status || "pending",
-          })
+          if (r.partnerRating) {
+            reviewMap[partnerId].avg += r.partnerRating
+            reviewMap[partnerId].count++
+          }
+        })
+      )
+
+      // Fix avg calc
+      Object.keys(reviewMap).forEach((id) => {
+        const { avg, count } = reviewMap[id]
+        reviewMap[id].avg = count > 0 ? avg / count : 0
+      })
+
+      // --- Step 5: Merge everything into partnersData ---
+      const partnersData: Partner[] = allPartners.map((docSnap) => {
+        const d = docSnap.data()
+        const wallet = walletMap[docSnap.id] || { earnings: 0, pendingPayouts: 0 }
+        const review = reviewMap[docSnap.id] || { avg: 0, count: 0 }
+
+        return {
+          id: docSnap.id,
+          display_name: d.display_name || "Unknown",
+          phone_number: d.phone_number || "N/A",
+          contact_no: d.contact_number || "N/A",
+          type: d.userType?.AgencyPartner ? "agency" : "provider",
+          city: d.city || "N/A",
+          services: d.userType?.AgencyPartner
+            ? ["Full Home"]
+            : serviceMap[docSnap.id]
+            ? [serviceMap[docSnap.id]]
+            : [],
+          joinDate: d.created_time instanceof Timestamp
+            ? d.created_time.toDate().toISOString()
+            : new Date().toISOString(),
+          rating: review.avg,
+          reviewCount: review.count,
+          earnings: wallet.earnings,
+          pendingPayouts: wallet.pendingPayouts,
+          kycStatus: d.kyc_status || "pending",
+          status: d.partner_status || "pending",
         }
+      })
 
-        // Process providers and agencies
-        for (const doc of snap1.docs) {
-          await pushPartner(doc, "provider")
-        }
-        for (const doc of snap2.docs) {
-          await pushPartner(doc, "agency")
-        }
-
-        // Filter only allowed IDs
-        const allowedIds = [
-          "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
-          "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
-          "VxxapfO7l8YM5f6xmFqpThc17eD3",
-        ]
-        setPartners(partnersData.filter((p) => allowedIds.includes(p.id)))
-      } catch (error) {
-        console.error("Error fetching partners:", error)
-      }
+      // Filter only allowed IDs
+      const allowedIds = [
+        "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
+        "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
+        "VxxapfO7l8YM5f6xmFqpThc17eD3",
+      ]
+      setPartners(partnersData.filter((p) => allowedIds.includes(p.id)))
+    } catch (error) {
+      console.error("Error fetching partners:", error)
     }
+  }
 
-    fetchPartners()
-  }, [])
+  fetchPartners()
+}, [])
+
 
   const filteredPartners = partners.filter((partner) => {
     const matchesSearch =
@@ -229,12 +288,12 @@ export function PartnerTable() {
             <TableHeader>
               <TableRow>
                 <TableHead>Partner</TableHead>
+                <TableHead>Partner Type</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Services</TableHead>
                 <TableHead>Join Date</TableHead>
                 <TableHead>Performance</TableHead>
                 <TableHead>Earnings</TableHead>
-                <TableHead>KYC Status</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-[50px]">Actions</TableHead>
               </TableRow>
@@ -245,8 +304,14 @@ export function PartnerTable() {
                   <TableCell>
                     <div>
                       <div className="font-medium">{partner.display_name}</div>
-                      <div className="text-sm text-muted-foreground">{partner.city}</div>
+                      <div className="text-sm text-muted-foreground">{partner.id}</div>
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className="text-xs">
+                      {partner.type === "provider" ? "Provider" : "Agency"}
+                    </Badge>
+
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">
@@ -255,18 +320,18 @@ export function PartnerTable() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {partner.services.slice(0, 2).map((service) => (
-                        <Badge key={service} variant="outline" className="text-xs">
-                          {service}
-                        </Badge>
-                      ))}
-                      {partner.services.length > 2 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{partner.services.length - 2}
-                        </Badge>
+                      {partner.services.length > 0 ? (
+                        partner.services.map((service) => (
+                          <Badge key={service} variant="outline" className="text-xs">
+                            {service}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground">N/A</span>
                       )}
                     </div>
                   </TableCell>
+
                   <TableCell>{formatDate(partner.joinDate)}</TableCell>
                   <TableCell>
                     <div className="space-y-1">
@@ -287,7 +352,6 @@ export function PartnerTable() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{getKycBadge(partner.kycStatus)}</TableCell>
                   <TableCell>{getStatusBadge(partner.status)}</TableCell>
                   <TableCell>
                     <DropdownMenu>

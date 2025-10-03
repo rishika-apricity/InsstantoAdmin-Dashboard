@@ -1,3 +1,5 @@
+
+//page.tsx
 "use client"
 import { useEffect, useState } from "react";
 import { fetchBookingStats } from "@/lib/queries/dashboard"; // Import fetchBookingStats
@@ -8,7 +10,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { ChartPlaceholder } from "@/components/dashboard/chart-placeholder";
 import { GraphPlaceholder } from "@/components/dashboard/graph-placeholder";
 import { QuickActions } from "@/components/dashboard/quick-actions";
-import { RecentActivity } from "@/components/dashboard/recent-activity";
+// import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { PerformanceMetrics } from "@/components/dashboard/performance-metrics";
 import { Calendar, Users, DollarSign, TrendingUp, UserPlus, Star, Activity, BarChart3 } from "lucide-react";
 
@@ -24,59 +26,62 @@ export default function DashboardPage() {
         setLoading(true); // Start loading
         const data = await fetchBookingStats(); // Fetch the real data from Firestore
         setKpiData([
-          {
-            title: "Total Bookings",
-            value: data.completedBookings.toLocaleString(), // Format the value with commas
-            change: "+12.5%", // You can adjust this dynamically if needed
-            trend: "up" as const, // Trend indicator (up or down)
-            icon: Calendar, // Use appropriate icons
-            color: "text-primary", // Color for the KPI card
-            description: "This month's bookings", // Description
-          },
-          // You can add more KPIs here with real data
-          {
-            title: "Total Sales",
-            value: `₹${Math.round(data.totalRevenue).toLocaleString()}`, // Update with real data
-            change: "+8.2%",
-            trend: "up" as const,
-            icon: DollarSign,
-            color: "text-secondary",
-            description: "Gross revenue before discounts",
-          },
-          {
-            title: "Net revenue",
-            value: `₹${Math.round(data.netRevenue).toLocaleString()}`, // Update with real data
-            change: "+15.3%",
-            trend: "up" as const,
-            icon: TrendingUp,
-            color: "text-chart-3",
-            description: "after discounts and offers",
-          },
-          { title: "Per order value",
-            value: `₹${Math.round(data.perOrderValue).toLocaleString()}`, change: "0.2%",
-            trend: "up" as const, icon: Users,
-            color: "text-chart-5",
-            description: "per order value",
-          },
-          {
-            title: "Total Signups",
-            value: data.totalCustomers.toLocaleString(),
-            change: "+5.7%",
-            trend: "up" as const,
-            icon: UserPlus, color: "text-chart-4",
-            description: "New customer registrations",
-          },
+  {
+    title: "Completed Bookings",
+    value: data.completedBookings.toLocaleString(),
+    change: `${data.completedBookingsChange}%`,
+    trend: data.completedBookingsChange >= 0 ? "up" : "down",
+    icon: Calendar,
+    color: "text-primary",
+    description: "Bookings successfully completed",
+  },
+  {
+    title: "Total Sales",
+    value: `₹${Math.round(data.totalRevenue).toLocaleString()}`,
+    change: `${data.totalRevenueChange}%`,
+    trend: data.totalRevenueChange >= 0 ? "up" : "down",
+    icon: DollarSign,
+    color: "text-secondary",
+    description: "Gross revenue",
+  },
+  {
+    title: "Net Revenue",
+    value: `₹${Math.round(data.netRevenue).toLocaleString()}`,
+    change: `${data.netRevenueChange}%`,
+    trend: data.netRevenueChange >= 0 ? "up" : "down",
+    icon: TrendingUp,
+    color: "text-chart-3",
+    description: "After discounts",
+  },
+  {
+    title: "Per Order Value",
+    value: `₹${Math.round(data.perOrderValue).toLocaleString()}`,
+    change: `${data.perOrderValueChange}%`,
+    trend: data.perOrderValueChange >= 0 ? "up" : "down",
+    icon: Users,
+    color: "text-chart-4",
+    description: "Average per booking",
+  },
+  {
+    title: "Total Signups",
+    value: data.totalCustomers.toLocaleString(),
+    change: `${data.totalCustomersChange}%`,
+    trend: data.totalCustomersChange >= 0 ? "up" : "down",
+    icon: UserPlus,
+    color: "text-primary",
+    description: "New customer registrations",
+  },
+  {
+    title: "CAC",
+    value: "0",
+    change: "0%",
+    trend: "up" as const,
+    icon: Star,
+    color: "text-chart-2",
+    description: "Customer Acquisition Cost",
+  },
+])
 
-          {
-            title: "Cusstomer Acquisition Cost (CAC)",
-            value: "2000",
-            change: "+0.2",
-            trend: "up" as const,
-            icon: Star,
-            color: "text-primary",
-            description: "Average service rating",
-          },
-        ]);
       } catch (error) {
         setError("Error fetching data"); // Handle error
       } finally {
@@ -130,14 +135,13 @@ export default function DashboardPage() {
             <PerformanceMetrics />
 
             {/* Quick Actions */}
-            <QuickActions />
+            {/* <QuickActions /> */}
 
             {/* Recent Activity */}
-            <RecentActivity />
+            {/* <RecentActivity />  */}
           </main>
         </div>
       </div>
     </ProtectedRoute>
   );
 }
-
