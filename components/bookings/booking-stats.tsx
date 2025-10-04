@@ -50,7 +50,7 @@ export default function BookingStats() {
     },
     {
       title: "Pending Bookings",
-      value: stats.pendingBookings.toLocaleString(),
+      value: stats.pendingBookings,
       description: "Awaiting confirmation",
       icon: Clock,
       color: "text-orange-600",
@@ -92,7 +92,7 @@ export default function BookingStats() {
     {
       title: "Cancelled Bookings",
       value: stats.cancelledBookings.toLocaleString(),
-      description: "Cancelled by Partner",
+      description: "Cancelled After Service Accepted",
       icon: XCircle,
       color: "text-red-600",
       bgColor: "bg-red-100",

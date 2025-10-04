@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
     BarChart,
     Bar,
@@ -14,9 +13,7 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    PieChart,
-    Pie,
-    Cell
+    LabelList
 } from "recharts"
 import {
     collection,
@@ -26,39 +23,30 @@ import {
     where,
     orderBy,
     Timestamp,
+    limit
 } from "firebase/firestore"
 import { getFirestoreDb } from "@/lib/firebase"
 import {
     DollarSign,
     TrendingUp,
-    Calendar,
-    Download,
+    CreditCard,
+    Wallet,
+    History,
     Loader2,
     ArrowUpIcon,
     ArrowDownIcon,
-    CreditCard,
-    Wallet,
-    History
 } from "lucide-react"
 
-type EarningsData = {
+type WalletTransaction = {
     id: string
     amount: number
     date: Timestamp
-    booking_id?: string
-    type: 'booking' | 'bonus' | 'referral' | 'adjustment'
-    status: 'completed' | 'pending' | 'cancelled'
+    partnerId: string
+    user_type: string
+    status?: string
     description?: string
     customer_name?: string
-}
-
-type PayoutData = {
-    id: string
-    amount: number
-    date: Timestamp
-    status: 'processed' | 'pending' | 'failed'
-    method: 'bank_transfer' | 'upi' | 'check'
-    reference?: string
+    bookingId?: string
 }
 
 interface PartnerEarningsSectionProps {
@@ -69,14 +57,21 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
 
 export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProps) {
     const db = getFirestoreDb()
-    const [earnings, setEarnings] = useState<EarningsData[]>([])
-    const [payouts, setPayouts] = useState<PayoutData[]>([])
+    const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([])
     const [loading, setLoading] = useState(true)
-    const [timeFilter, setTimeFilter] = useState("30")
     const [totalEarnings, setTotalEarnings] = useState(0)
     const [currentBalance, setCurrentBalance] = useState(0)
     const [pendingPayouts, setPendingPayouts] = useState(0)
     const [monthlyGrowth, setMonthlyGrowth] = useState(0)
+    const [thisMonthEarnings, setThisMonthEarnings] = useState(0)
+
+    // Pagination
+    const [page, setPage] = useState(1)
+    const pageSize = 10
+    const totalPages = Math.ceil(walletTransactions.length / pageSize)
+    const paginatedTransactions = walletTransactions.slice((page - 1) * pageSize, page * pageSize)
+    const [loanRecoveredAmount, setLoanRecoveredAmount] = useState(0)
+    const [netEarnings, setNetEarnings] = useState(0)
 
     useEffect(() => {
         const fetchEarningsData = async () => {
@@ -85,13 +80,12 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
 
                 const partnerRef = doc(db, "customer", partnerId)
 
-                // Fetch wallet info
+                // Fetch wallet overall info
                 const walletQuery = query(
                     collection(db, "Wallet_Overall"),
                     where("service_partner_id", "==", partnerRef)
                 )
                 const walletSnapshot = await getDocs(walletQuery)
-
                 if (!walletSnapshot.empty) {
                     const walletData = walletSnapshot.docs[0]?.data()
                     if (walletData) {
@@ -99,144 +93,145 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                         setCurrentBalance(walletData.total_balance || 0)
                         setPendingPayouts(walletData.pending_amount || 0)
                     }
+                    const loanQuery = query(
+                        collection(db, "PartnerKitLoan"),
+                        where("partnerId", "==", partnerRef)
+                    )
+                    const loanSnap = await getDocs(loanQuery)
+                    let recovered = 0
+                    if (!loanSnap.empty) {
+                        recovered = loanSnap.docs[0].data().loanRecoveredAmount || 0
+                    }
+                    setLoanRecoveredAmount(recovered)
+
+                    // Net earnings before loan deductions
+                    setNetEarnings(walletData.TotalAmountComeIn_Wallet + recovered)
+
                 }
 
-                // Fetch bookings for earnings
-                let bookingsQuery
+                // Fetch wallet transactions
+                let walletTransactionsQuery
                 try {
-                    bookingsQuery = query(
-                        collection(db, "bookings"),
-                        where("provider_id", "==", partnerRef),
-                        where("status", "==", "completed"),
-                        orderBy("date", "desc")
+                    walletTransactionsQuery = query(
+                        collection(db, "Wallet_In_record"),
+                        where("partnerId", "==", partnerRef),
+                        orderBy("Timestamp", "desc"),
+                        limit(200) // Fetch recent 200
                     )
                 } catch {
-                    bookingsQuery = query(
-                        collection(db, "bookings"),
-                        where("provider_id", "==", partnerRef),
-                        where("status", "==", "completed")
+                    walletTransactionsQuery = query(
+                        collection(db, "Wallet_In_record"),
+                        where("partnerId", "==", partnerRef),
+                        limit(200)
                     )
                 }
 
-                const bookingsSnapshot = await getDocs(bookingsQuery)
-                const earningsData: EarningsData[] = []
-                const customerPromises: Promise<any>[] = []
+                const walletTransactionsSnapshot = await getDocs(walletTransactionsQuery)
+                const transactionsData: WalletTransaction[] = []
+                const bookingIds: string[] = []
 
-                bookingsSnapshot.forEach(bookingDoc => {
-                    const booking = bookingDoc.data()
-                    if (booking.amount_paid && booking.amount_paid > 0) {
-                        const partnerEarning = booking.amount_paid * 0.8
-                        earningsData.push({
-                            id: bookingDoc.id,
-                            amount: partnerEarning,
-                            date: booking.date || Timestamp.now(),
-                            booking_id: bookingDoc.id,
-                            type: 'booking',
-                            status: 'completed',
-                            description: `Service booking payment`
+                walletTransactionsSnapshot.forEach((transactionDoc) => {
+                    const transaction = transactionDoc.data()
+                    if (transaction.payment_in_wallet && transaction.payment_in_wallet > 0) {
+                        const bookingIdValue =
+                            typeof transaction.bookingId === "string"
+                                ? transaction.bookingId
+                                : transaction.bookingId?.id
+
+                        if (bookingIdValue) bookingIds.push(bookingIdValue)
+
+                        transactionsData.push({
+                            id: transactionDoc.id,
+                            amount: transaction.payment_in_wallet,
+                            date: transaction.Timestamp || Timestamp.now(),
+                            partnerId: transaction.partnerId?.id || partnerId,
+                            user_type: transaction.user_type || "customer",
+                            status: "Completed",
+                            description: "Wallet credit",
+                            customer_name: "Unknown",
+                            bookingId: bookingIdValue,
                         })
+                    }
+                })
 
-                        if (booking.customer_id) {
-                            const customerPromise = getDocs(query(
-                                collection(db, "customer"),
-                                where("__name__", "==", booking.customer_id?.id || "")
-                            )).then(snapshot => {
-                                if (!snapshot.empty) {
-                                    const customerData = snapshot.docs[0]?.data()
-                                    return {
-                                        bookingId: bookingDoc.id,
-                                        name: customerData?.display_name || customerData?.customer_name || "Unknown"
-                                    }
-                                }
-                                return { bookingId: bookingDoc.id, name: "Unknown" }
-                            }).catch(() => ({ bookingId: bookingDoc.id, name: "Unknown" }))
+                // --- Batch fetch bookings ---
+                const bookingMap: Record<string, any> = {}
+                for (let i = 0; i < bookingIds.length; i += 10) {
+                    const batch = bookingIds.slice(i, i + 10)
+                    const bookingSnap = await getDocs(
+                        query(collection(db, "bookings"), where("__name__", "in", batch))
+                    )
+                    bookingSnap.forEach((docSnap) => {
+                        bookingMap[docSnap.id] = docSnap.data()
+                    })
+                }
 
-                            customerPromises.push(customerPromise)
+                // Collect all customerIds
+                const customerIds: string[] = []
+                Object.values(bookingMap).forEach((booking: any) => {
+                    if (booking.customer_id?.id) customerIds.push(booking.customer_id.id)
+                })
+
+                // --- Batch fetch customers ---
+                const customerMap: Record<string, any> = {}
+                for (let i = 0; i < customerIds.length; i += 10) {
+                    const batch = customerIds.slice(i, i + 10)
+                    const customerSnap = await getDocs(
+                        query(collection(db, "customer"), where("__name__", "in", batch))
+                    )
+                    customerSnap.forEach((docSnap) => {
+                        customerMap[docSnap.id] = docSnap.data()
+                    })
+                }
+
+                // --- Enrich transactions ---
+                transactionsData.forEach((tx) => {
+                    if (tx.bookingId && bookingMap[tx.bookingId]) {
+                        const booking = bookingMap[tx.bookingId]
+                        if (booking.customer_id?.id && customerMap[booking.customer_id.id]) {
+                            const customer = customerMap[booking.customer_id.id]
+                            tx.customer_name =
+                                customer.display_name || customer.customer_name || "Unknown"
                         }
+                        tx.description = `Service payment from ${tx.customer_name}`
                     }
                 })
 
-                const customerResults = await Promise.all(customerPromises)
-                const customerMap = customerResults.reduce((map, result) => {
-                    map[result.bookingId] = result.name
-                    return map
-                }, {} as Record<string, string>)
-
-                earningsData.forEach(earning => {
-                    if (earning.booking_id && customerMap[earning.booking_id]) {
-                        earning.customer_name = customerMap[earning.booking_id]
-                        earning.description = `Service for ${customerMap[earning.booking_id]}`
-                    }
-                })
-
-                earningsData.sort((a, b) => {
+                // Sort transactions
+                transactionsData.sort((a, b) => {
                     const dateA = a.date?.toDate?.() || new Date(0)
                     const dateB = b.date?.toDate?.() || new Date(0)
                     return dateB.getTime() - dateA.getTime()
                 })
 
-                const bonusEarnings: EarningsData[] = [
-                    {
-                        id: "bonus001",
-                        amount: 500,
-                        date: Timestamp.fromDate(new Date(Date.now() - 86400000 * 7)),
-                        type: 'bonus',
-                        status: 'completed',
-                        description: 'Monthly performance bonus'
-                    },
-                    {
-                        id: "referral001",
-                        amount: 200,
-                        date: Timestamp.fromDate(new Date(Date.now() - 86400000 * 14)),
-                        type: 'referral',
-                        status: 'completed',
-                        description: 'New partner referral bonus'
-                    }
-                ]
+                setWalletTransactions(transactionsData)
 
-                const allEarnings = [...earningsData, ...bonusEarnings]
-                setEarnings(allEarnings)
+                // Calculate this month's earnings
+                const now = new Date()
+                const currentMonthEarnings = transactionsData
+                    .filter((t) => {
+                        const d = t.date.toDate()
+                        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+                    })
+                    .reduce((sum, t) => sum + t.amount, 0)
 
-                const mockPayouts: PayoutData[] = [
-                    {
-                        id: "payout001",
-                        amount: 15000,
-                        date: Timestamp.fromDate(new Date(Date.now() - 86400000 * 10)),
-                        status: 'processed',
-                        method: 'bank_transfer',
-                        reference: 'TXN123456789'
-                    },
-                    {
-                        id: "payout002",
-                        amount: 8000,
-                        date: Timestamp.fromDate(new Date(Date.now() - 86400000 * 40)),
-                        status: 'processed',
-                        method: 'upi',
-                        reference: 'UPI987654321'
-                    }
-                ]
+                setThisMonthEarnings(currentMonthEarnings)
 
-                setPayouts(mockPayouts)
+                // Last month growth
+                const lastMonthDate = new Date()
+                lastMonthDate.setMonth(lastMonthDate.getMonth() - 1)
+                const lastMonthEarnings = transactionsData
+                    .filter((t) => {
+                        const d = t.date.toDate()
+                        return d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear()
+                    })
+                    .reduce((sum, t) => sum + t.amount, 0)
 
-                const currentMonth = allEarnings.filter(e => {
-                    const earningDate = e.date.toDate()
-                    const now = new Date()
-                    return earningDate.getMonth() === now.getMonth() &&
-                        earningDate.getFullYear() === now.getFullYear()
-                }).reduce((sum, e) => sum + e.amount, 0)
-
-                const lastMonth = allEarnings.filter(e => {
-                    const earningDate = e.date.toDate()
-                    const lastMonthDate = new Date()
-                    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1)
-                    return earningDate.getMonth() === lastMonthDate.getMonth() &&
-                        earningDate.getFullYear() === lastMonthDate.getFullYear()
-                }).reduce((sum, e) => sum + e.amount, 0)
-
-                if (lastMonth > 0) {
-                    setMonthlyGrowth(((currentMonth - lastMonth) / lastMonth) * 100)
+                if (lastMonthEarnings > 0) {
+                    setMonthlyGrowth(((currentMonthEarnings - lastMonthEarnings) / lastMonthEarnings) * 100)
+                } else if (currentMonthEarnings > 0) {
+                    setMonthlyGrowth(100)
                 }
-
             } catch (error) {
                 console.error("Error fetching earnings data:", error)
             } finally {
@@ -247,49 +242,32 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
         if (partnerId) {
             fetchEarningsData()
         }
-    }, [partnerId, db, timeFilter])
+    }, [partnerId, db])
 
-    const generateMonthlyEarnings = (earnings: EarningsData[]) => {
+    const formatCurrency = (amount: number) =>
+        new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount)
+
+    const formatDate = (timestamp: Timestamp) =>
+        timestamp.toDate().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+
+    const generateMonthlyEarnings = (transactions: WalletTransaction[]) => {
         const monthlyData: { [key: string]: number } = {}
-        earnings.forEach(earning => {
-            const month = earning.date.toDate().toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short'
-            })
-            monthlyData[month] = (monthlyData[month] || 0) + earning.amount
+        const months: string[] = []
+        for (let i = 5; i >= 0; i--) {
+            const date = new Date()
+            date.setMonth(date.getMonth() - i)
+            const key = date.toLocaleDateString("en-US", { year: "numeric", month: "short" })
+            months.push(key)
+            monthlyData[key] = 0
+        }
+        transactions.forEach((t) => {
+            const key = t.date.toDate().toLocaleDateString("en-US", { year: "numeric", month: "short" })
+            if (months.includes(key)) monthlyData[key] += t.amount
         })
-        return Object.entries(monthlyData).map(([month, amount]) => ({ month, amount })).slice(-6)
+        return months.map((m) => ({ month: m, amount: monthlyData[m] || 0 }))
     }
 
-    const generateEarningsBreakdown = (earnings: EarningsData[]) => {
-        const breakdown = earnings.reduce((acc, earning) => {
-            acc[earning.type] = (acc[earning.type] || 0) + earning.amount
-            return acc
-        }, {} as Record<string, number>)
-        return Object.entries(breakdown).map(([type, amount]) => ({
-            name: type.charAt(0).toUpperCase() + type.slice(1),
-            value: amount
-        }))
-    }
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-IN", {
-            style: "currency",
-            currency: "INR",
-            maximumFractionDigits: 0
-        }).format(amount)
-    }
-
-    const formatDate = (timestamp: Timestamp) => {
-        return timestamp.toDate().toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric"
-        })
-    }
-
-    const chartData = generateMonthlyEarnings(earnings)
-    const pieData = generateEarningsBreakdown(earnings)
+    const chartData = generateMonthlyEarnings(walletTransactions)
 
     if (loading) {
         return (
@@ -302,47 +280,8 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
 
     return (
         <div className="space-y-6">
-            {/* Earnings Overview Cards */}
+            {/* KPI Cards */}
             <div className="grid gap-4 md:grid-cols-4">
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-green-100 rounded-lg">
-                                <DollarSign className="w-6 h-6 text-green-600" />
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium text-muted-foreground">Total Earnings</p>
-                                <p className="text-2xl font-bold">{formatCurrency(totalEarnings)}</p>
-                                <div className="flex items-center gap-1 mt-1">
-                                    {monthlyGrowth >= 0 ? (
-                                        <ArrowUpIcon className="w-4 h-4 text-green-500" />
-                                    ) : (
-                                        <ArrowDownIcon className="w-4 h-4 text-red-500" />
-                                    )}
-                                    <span className={`text-xs ${monthlyGrowth >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                        {monthlyGrowth >= 0 ? '+' : ''}{monthlyGrowth.toFixed(1)}% from last month
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-blue-100 rounded-lg">
-                                <Wallet className="w-6 h-6 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium text-muted-foreground">Current Balance</p>
-                                <p className="text-2xl font-bold">{formatCurrency(currentBalance)}</p>
-                                <p className="text-xs text-muted-foreground mt-1">Available for withdrawal</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
                 <Card>
                     <CardContent className="p-6">
                         <div className="flex items-center gap-4">
@@ -350,243 +289,141 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                                 <CreditCard className="w-6 h-6 text-orange-600" />
                             </div>
                             <div>
-                                <p className="text-sm font-medium text-muted-foreground">Pending Payouts</p>
-                                <p className="text-2xl font-bold">{formatCurrency(pendingPayouts)}</p>
-                                <p className="text-xs text-muted-foreground mt-1">Processing payments</p>
+                                <p className="text-sm text-muted-foreground">Total Earnings (before loan deductions)</p>
+                                <p className="text-2xl font-bold">{formatCurrency(netEarnings)}</p>
+                                <span className="text-xs text-muted-foreground">
+                                    Includes ₹{formatCurrency(loanRecoveredAmount)} recovered from loans
+                                </span>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
-
                 <Card>
                     <CardContent className="p-6">
                         <div className="flex items-center gap-4">
-                            <div className="p-3 bg-purple-100 rounded-lg">
-                                <TrendingUp className="w-6 h-6 text-purple-600" />
-                            </div>
+                            <div className="p-3 bg-green-100 rounded-lg"><DollarSign className="w-6 h-6 text-green-600" /></div>
                             <div>
-                                <p className="text-sm font-medium text-muted-foreground">This Month</p>
-                                <p className="text-2xl font-bold">
-                                    {formatCurrency(
-                                        earnings
-                                            .filter(e => {
-                                                const earningDate = e.date.toDate()
-                                                const now = new Date()
-                                                return earningDate.getMonth() === now.getMonth() &&
-                                                    earningDate.getFullYear() === now.getFullYear()
-                                            })
-                                            .reduce((sum, e) => sum + e.amount, 0)
-                                    )}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">Current month earnings</p>
+                                <p className="text-sm text-muted-foreground">Net Earnings</p>
+                                <p className="text-2xl font-bold">{formatCurrency(totalEarnings)}</p>
+                                <span className="text-xs text-muted-foreground">
+                                    Income after loan deductions
+                                </span>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="p-6">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-orange-100 rounded-lg"><CreditCard className="w-6 h-6 text-orange-600" /></div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Pending Payouts</p>
+                                <p className="text-2xl font-bold">{formatCurrency(currentBalance)}</p>
+                                <span className="text-xs text-muted-foreground">
+                                    Available Balance in wallet
+                                </span>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="p-6">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-purple-100 rounded-lg"><TrendingUp className="w-6 h-6 text-purple-600" /></div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">This Month</p>
+                                <p className="text-2xl font-bold">{formatCurrency(thisMonthEarnings)}</p>
+                                <div className="flex items-center gap-1 mt-1">
+                                    {monthlyGrowth >= 0 ? <ArrowUpIcon className="w-4 h-4 text-green-500" /> : <ArrowDownIcon className="w-4 h-4 text-red-500" />}
+                                    <span className={`text-xs ${monthlyGrowth >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                        {monthlyGrowth >= 0 ? "+" : ""}{monthlyGrowth.toFixed(1)}% from last month
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* Charts Row */}
-            <div className="grid gap-6 md:grid-cols-2">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle className="flex items-center gap-2">
-                            <TrendingUp className="w-5 h-5" />
-                            Earnings Trend
-                        </CardTitle>
-                        <Select value={timeFilter} onValueChange={setTimeFilter}>
-                            <SelectTrigger className="w-32">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="7">7 Days</SelectItem>
-                                <SelectItem value="30">30 Days</SelectItem>
-                                <SelectItem value="90">90 Days</SelectItem>
-                                <SelectItem value="365">1 Year</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </CardHeader>
-                    <CardContent>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="month" />
-                                <YAxis tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`} />
-                                <Tooltip formatter={(value) => [formatCurrency(value as number), "Earnings"]} />
-                                <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <DollarSign className="w-5 h-5" />
-                            Earnings Breakdown
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <PieChart>
-                                <Pie
-                                    data={pieData}
-                                    cx="50%"
-                                    cy="50%"
-                                    labelLine={false}
-                                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                    outerRadius={100}
-                                    fill="#8884d8"
-                                    dataKey="value"
-                                >
-                                    {pieData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip formatter={(value) => [formatCurrency(value as number)]} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Recent Earnings Table */}
+            {/* Earnings Chart */}
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
-                        <History className="w-5 h-5" />
-                        Recent Earnings
+                        <TrendingUp className="w-5 h-5" />
+                        Earnings Trend (Last 6 Months)
                     </CardTitle>
-                    <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
-                        Export
-                    </Button>
                 </CardHeader>
                 <CardContent>
-                    {earnings.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                            <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <p>No earnings data found for this partner.</p>
-                        </div>
-                    ) : (
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Description</TableHead>
-                                        <TableHead>Type</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead className="text-right">Amount</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {earnings.slice(0, 10).map((earning) => (
-                                        <TableRow key={earning.id}>
-                                            <TableCell className="font-mono text-sm">
-                                                {formatDate(earning.date)}
-                                            </TableCell>
-                                            <TableCell>
-                                                <div>
-                                                    <p className="font-medium">{earning.description}</p>
-                                                    {earning.booking_id && (
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Booking: {earning.booking_id.slice(0, 12)}...
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant="outline" className="capitalize">
-                                                    {earning.type}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge
-                                                    variant={earning.status === 'completed' ? 'default' : 'secondary'}
-                                                    className={
-                                                        earning.status === 'completed'
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : earning.status === 'pending'
-                                                                ? 'bg-yellow-100 text-yellow-800'
-                                                                : 'bg-red-100 text-red-800'
-                                                    }
-                                                >
-                                                    {earning.status}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="text-right font-medium">
-                                                {formatCurrency(earning.amount)}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    )}
+                    <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                            <defs>
+                                <linearGradient id="earningsGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style={{ stopColor: "#10b981", stopOpacity: 1 }} />
+                                    <stop offset="100%" style={{ stopColor: "#ffffff", stopOpacity: 0.6 }} />
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="month" />
+                            <YAxis tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`} />
+                            <Tooltip formatter={(value) => [formatCurrency(value as number), "Earnings"]} />
+                            <Bar dataKey="amount" barSize={30} radius={[10, 10, 0, 0]} fill="url(#earningsGradient)">
+                                <LabelList
+                                    dataKey="amount"
+                                    position="top"
+                                    fill="#333"
+                                    fontSize={12}
+                                    fontWeight="bold"
+                                    formatter={(value: number) => `₹${(value / 1000).toFixed(0)}k`}
+                                />
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
                 </CardContent>
             </Card>
 
-            {/* Payout History */}
+            {/* Transactions */}
             <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <CreditCard className="w-5 h-5" />
-                        Payout History
-                    </CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle className="flex items-center gap-2"><History className="w-5 h-5" /> Recent Transactions</CardTitle></CardHeader>
                 <CardContent>
-                    {payouts.length === 0 ? (
+                    {walletTransactions.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
-                            <CreditCard className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <p>No payout history found.</p>
+                            <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                            <p>No wallet transactions found for this partner.</p>
                         </div>
                     ) : (
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Amount</TableHead>
-                                        <TableHead>Method</TableHead>
-                                        <TableHead>Reference</TableHead>
-                                        <TableHead>Status</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {payouts.map((payout) => (
-                                        <TableRow key={payout.id}>
-                                            <TableCell className="font-mono text-sm">
-                                                {formatDate(payout.date)}
-                                            </TableCell>
-                                            <TableCell className="font-medium">
-                                                {formatCurrency(payout.amount)}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant="outline" className="capitalize">
-                                                    {payout.method.replace('_', ' ')}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="font-mono text-sm">
-                                                {payout.reference || "—"}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge
-                                                    className={
-                                                        payout.status === 'processed'
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : payout.status === 'pending'
-                                                                ? 'bg-yellow-100 text-yellow-800'
-                                                                : 'bg-red-100 text-red-800'
-                                                    }
-                                                >
-                                                    {payout.status}
-                                                </Badge>
-                                            </TableCell>
+                        <>
+                            <div className="rounded-md border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Date</TableHead>
+                                            <TableHead>Description</TableHead>
+                                            <TableHead>Customer</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead className="text-right">Amount</TableHead>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {paginatedTransactions.map((transaction) => (
+                                            <TableRow key={transaction.id}>
+                                                <TableCell>{formatDate(transaction.date)}</TableCell>
+                                                <TableCell>{transaction.description}</TableCell>
+                                                <TableCell>{transaction.customer_name || "N/A"}</TableCell>
+                                                <TableCell><Badge className="bg-green-100 text-green-800">{transaction.status}</Badge></TableCell>
+                                                <TableCell className="text-right font-medium">+ {formatCurrency(transaction.amount)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+
+                            {/* Pagination Controls */}
+                            <div className="flex justify-between items-center mt-4">
+                                <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+                                <span className="text-sm">Page {page} of {totalPages}</span>
+                                <Button variant="outline" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+                            </div>
+                        </>
                     )}
                 </CardContent>
             </Card>

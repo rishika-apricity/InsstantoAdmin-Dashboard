@@ -1,98 +1,88 @@
-
 "use client"
 
 import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-    FileText,
-    Download,
-    Eye,
-    CheckCircle,
-    XCircle,
-    Clock,
-    Upload,
-    Loader2,
-    AlertCircle
-} from "lucide-react"
+import { AlertCircle, CheckCircle, FileText } from "lucide-react"
+import { collection, query, where, getDocs, Timestamp, DocumentReference, doc } from "firebase/firestore"
+import { getFirestoreDb } from "@/lib/firebase"
 
 interface PartnerChemicalsSectionProps {
     partnerId: string
 }
 
+interface ChemicalPurchase {
+    id: string
+    purchase_date: Date
+    amount_paid: number
+    status: string
+    chemicalname: string[]
+    chemicalquantity: number[]
+    PaymentType?: string
+}
+
 export function PartnerChemicalsSection({ partnerId }: PartnerChemicalsSectionProps) {
-    const [loading, setLoading] = useState(false)
+    const [loading, setLoading] = useState(true)
+    const [purchases, setPurchases] = useState<ChemicalPurchase[]>([])
 
-    // Mock chemical purchase data
-    const chemicalPurchases = [
-        {
-            id: "chem001",
-            productName: "Organic Pesticide - Neem Oil",
-            category: "Pesticides",
-            quantity: 50,
-            unit: "liters",
-            pricePerUnit: 120,
-            totalAmount: 6000,
-            purchaseDate: "2024-02-15",
-            supplier: "GreenChem Supplies",
-            status: "delivered"
-        },
-        {
-            id: "chem002",
-            productName: "NPK Fertilizer 16-16-16",
-            category: "Fertilizers",
-            quantity: 100,
-            unit: "kg",
-            pricePerUnit: 25,
-            totalAmount: 2500,
-            purchaseDate: "2024-02-10",
-            supplier: "AgriTech Solutions",
-            status: "delivered"
-        },
-        {
-            id: "chem003",
-            productName: "Fungicide - Copper Sulfate",
-            category: "Fungicides",
-            quantity: 25,
-            unit: "kg",
-            pricePerUnit: 80,
-            totalAmount: 2000,
-            purchaseDate: "2024-02-05",
-            supplier: "ChemAg Industries",
-            status: "pending"
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const db = getFirestoreDb()
+                const q = query(
+                    collection(db, "chemical_purchase_record"),
+                    where("partnerId", "==", doc(db, `customer/${partnerId}`) as DocumentReference)
+                )
+
+
+                const snapshot = await getDocs(q)
+                const data: ChemicalPurchase[] = snapshot.docs.map(doc => {
+                    const d = doc.data()
+                    return {
+                        id: doc.id,
+                        purchase_date: d.purchase_date?.toDate?.() || new Date(),
+                        amount_paid: d.amount_paid || 0,
+                        status: d.status || "pending",
+                        chemicalname: d.chemicalname || [],
+                        chemicalquantity: d.chemicalquantity || [],
+                        PaymentType: d.PaymentType || ""
+                    }
+                })
+                setPurchases(data)
+            } catch (error) {
+                console.error("Error fetching chemical purchases:", error)
+            } finally {
+                setLoading(false)
+            }
         }
-    ]
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-IN", {
-            style: "currency",
-            currency: "INR",
-            maximumFractionDigits: 0
-        }).format(amount)
-    }
+        fetchData()
+    }, [partnerId])
+
+    const formatCurrency = (amount: number) =>
+        new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount)
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case 'delivered':
+            case "delivered":
                 return <Badge className="bg-green-100 text-green-800">Delivered</Badge>
-            case 'pending':
+            case "pending":
                 return <Badge variant="outline">Pending</Badge>
-            case 'cancelled':
+            case "cancelled":
                 return <Badge variant="destructive">Cancelled</Badge>
             default:
                 return <Badge variant="secondary">{status}</Badge>
         }
     }
 
-    const totalSpent = chemicalPurchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0)
-    const totalOrders = chemicalPurchases.length
-    const deliveredOrders = chemicalPurchases.filter(p => p.status === 'delivered').length
+    const totalSpent = purchases.reduce((sum, p) => sum + p.amount_paid, 0)
+    const totalOrders = purchases.length
+    const deliveredOrders = purchases.filter(p => p.status === "received").length
 
     return (
         <div className="space-y-6">
-            {/* Chemical Purchase Stats */}
+            {/* KPI Cards */}
             <div className="grid gap-4 md:grid-cols-3">
                 <Card>
                     <CardContent className="p-4">
@@ -137,13 +127,15 @@ export function PartnerChemicalsSection({ partnerId }: PartnerChemicalsSectionPr
                 </Card>
             </div>
 
-            {/* Chemical Purchases Table */}
+            {/* Table */}
             <Card>
                 <CardHeader>
                     <CardTitle>Chemical Purchase History</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    {chemicalPurchases.length === 0 ? (
+                    {loading ? (
+                        <div className="text-center py-8">Loading...</div>
+                    ) : purchases.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                             <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
                             <p>No chemical purchases found.</p>
@@ -153,32 +145,30 @@ export function PartnerChemicalsSection({ partnerId }: PartnerChemicalsSectionPr
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>Product</TableHead>
-                                        <TableHead>Category</TableHead>
-                                        <TableHead>Quantity</TableHead>
-                                        <TableHead>Price/Unit</TableHead>
-                                        <TableHead>Total</TableHead>
+                                        <TableHead>ID</TableHead>
+                                        <TableHead>Chemicals</TableHead>
+                                        <TableHead>Amount Paid</TableHead>
+                                        <TableHead>Payment Type</TableHead>
                                         <TableHead>Date</TableHead>
                                         <TableHead>Status</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {chemicalPurchases.map((purchase) => (
-                                        <TableRow key={purchase.id}>
+                                    {purchases.map(p => (
+                                        <TableRow key={p.id}>
                                             <TableCell>
-                                                <div>
-                                                    <p className="font-medium">{purchase.productName}</p>
-                                                    <p className="text-xs text-muted-foreground">{purchase.supplier}</p>
-                                                </div>
+                                                {p.id}
                                             </TableCell>
                                             <TableCell>
-                                                <Badge variant="outline">{purchase.category}</Badge>
+                                                {p.chemicalname.map((name, idx) => (
+                                                    <div key={idx} className="text-sm">{name}</div>
+                                                ))}
                                             </TableCell>
-                                            <TableCell>{purchase.quantity} {purchase.unit}</TableCell>
-                                            <TableCell>{formatCurrency(purchase.pricePerUnit)}</TableCell>
-                                            <TableCell className="font-medium">{formatCurrency(purchase.totalAmount)}</TableCell>
-                                            <TableCell>{purchase.purchaseDate}</TableCell>
-                                            <TableCell>{getStatusBadge(purchase.status)}</TableCell>
+
+                                            <TableCell className="font-medium">{formatCurrency(p.amount_paid)}</TableCell>
+                                            <TableCell>{p.PaymentType || "UPI"}</TableCell>
+                                            <TableCell>{p.purchase_date.toLocaleDateString()}</TableCell>
+                                            <TableCell>{getStatusBadge(p.status)}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>

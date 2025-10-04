@@ -3,11 +3,13 @@ import {
     collection,
     getDocs,
     getDoc,
+    doc, // ✅ add this
     DocumentReference,
     DocumentData,
     query,
     where,
 } from "firebase/firestore"
+
 
 export type TopService = {
     name: string
@@ -26,7 +28,6 @@ export async function fetchTopServices(): Promise<TopService[]> {
 
         const snapshot = await getDocs(q)
 
-        // Allowed providers
         const allowedProviders = [
             "VxxapfO7l8YM5f6xmFqpThc17eD3",
             "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
@@ -34,41 +35,49 @@ export async function fetchTopServices(): Promise<TopService[]> {
         ]
 
         const serviceCount: Record<string, number> = {}
+        const subCategoryRefs: Set<string> = new Set()
+        const bookingsBySubCat: Record<string, number> = {}
 
-        // Process bookings
+        // First pass: collect subCategory ids
         for (const doc of snapshot.docs) {
             const booking = doc.data()
-
             const providerId =
-                booking.provider_id?.id || booking.provider_id // Handles both ref and string
+                booking.provider_id?.id || booking.provider_id
             if (!allowedProviders.includes(providerId)) continue
 
             const subCategoryRef: DocumentReference<DocumentData> | undefined =
                 booking.subCategoryCart_id
             if (!subCategoryRef) continue
 
-            try {
-                const subCategorySnap = await getDoc(subCategoryRef)
-                if (!subCategorySnap.exists()) continue
+            subCategoryRefs.add(subCategoryRef.path)
+            bookingsBySubCat[subCategoryRef.path] =
+                (bookingsBySubCat[subCategoryRef.path] || 0) + 1
+        }
 
-                const serviceName = subCategorySnap.data()?.service_name
-                if (serviceName) {
-                    serviceCount[serviceName] = (serviceCount[serviceName] || 0) + 1
-                }
-            } catch (err) {
-                console.error("Error fetching subCategory:", err)
+        // Batch fetch all subcategories in parallel
+        const subCatDocs = await Promise.all(
+            Array.from(subCategoryRefs).map(async (path) => {
+                const ref = (await getDoc(doc(db, path))).data()
+                return { path, data: ref }
+            })
+        )
+
+        // Map subcategory names to booking counts
+        for (const { path, data } of subCatDocs) {
+            if (!data) continue
+            const serviceName = data.service_name
+            if (serviceName) {
+                serviceCount[serviceName] =
+                    (serviceCount[serviceName] || 0) +
+                    bookingsBySubCat[path]
             }
         }
 
-        // Sort services by bookings & take top 5
-        const sorted = Object.entries(serviceCount)
+        // Sort and return top 5
+        return Object.entries(serviceCount)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5)
-
-        return sorted.map(([name, count]) => ({
-            name,
-            bookings: count,
-        }))
+            .map(([name, count]) => ({ name, bookings: count }))
     } catch (error) {
         console.error("Error fetching top services:", error)
         return []

@@ -4,77 +4,126 @@ import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   FileText,
-  Download,
   Eye,
   CheckCircle,
   XCircle,
   Clock,
-  Upload,
   Loader2,
   AlertCircle
 } from "lucide-react"
+import { doc, getDoc, getFirestore } from "firebase/firestore"
+import { getFirestoreDb } from "@/lib/firebase" // Adjust this import path to your firebase config
+
+// Initialize Firestore
+const db = getFirestoreDb()
 
 interface PartnerDocumentsSectionProps {
   partnerId: string
 }
 
-export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionProps) {
-  const [loading, setLoading] = useState(false)
+interface DocumentItem {
+  name: string
+  fieldKey: string
+  imagePath: string | null
+  status: "verified" | "pending" | "not_uploaded"
+}
 
-  // Mock document data (in real app, fetch from Firestore)
-  const documents = [
-    {
-      id: "doc001",
-      type: "KYC",
-      name: "Aadhaar Card",
-      status: "verified",
-      uploadDate: "2024-01-15",
-      verifiedDate: "2024-01-16",
-      fileUrl: "#"
-    },
-    {
-      id: "doc002", 
-      type: "KYC",
-      name: "PAN Card",
-      status: "verified",
-      uploadDate: "2024-01-15",
-      verifiedDate: "2024-01-16",
-      fileUrl: "#"
-    },
-    {
-      id: "doc003",
-      type: "Business",
-      name: "Business License", 
-      status: "pending",
-      uploadDate: "2024-02-01",
-      verifiedDate: null,
-      fileUrl: "#"
-    },
-    {
-      id: "doc004",
-      type: "Certification",
-      name: "Service Certification",
-      status: "rejected",
-      uploadDate: "2024-01-20",
-      verifiedDate: "2024-01-22",
-      fileUrl: "#",
-      rejectionReason: "Document quality is poor"
-    }
+export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionProps) {
+  const [loading, setLoading] = useState(true)
+  const [documents, setDocuments] = useState<DocumentItem[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  // Document field mappings
+  const documentFields = [
+    { fieldKey: "aadhaarFront", name: "Aadhaar Card (Front)" },
+    { fieldKey: "aadhaarBack", name: "Aadhaar Card (Back)" },
+    { fieldKey: "panCard", name: "PAN Card" },
+    { fieldKey: "photo", name: "Photo" },
+    { fieldKey: "certifications", name: "Certifications" },
+    { fieldKey: "bankPassbook", name: "Bank Passbook" },
+    { fieldKey: "policeVerification", name: "Police Verification" },
+    { fieldKey: "certification", name: "Service Certification" },
+    { fieldKey: "medicalCertificate", name: "Medical Certificate" },
+    { fieldKey: "electricityBill", name: "Electricity Bill" },
+    { fieldKey: "rentAgreement", name: "Rent Agreement" },
+    { fieldKey: "PartnerSign", name: "Partner Signature" }
   ]
+
+  useEffect(() => {
+    fetchPartnerDocuments()
+  }, [partnerId])
+
+  const fetchPartnerDocuments = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Fetch partner document from form_details collection
+      const partnerDocRef = doc(db, "form_details", partnerId)
+      const partnerDocSnap = await getDoc(partnerDocRef)
+
+      if (!partnerDocSnap.exists()) {
+        setError("Partner document not found")
+        setDocuments([])
+        return
+      }
+
+      const partnerData = partnerDocSnap.data()
+
+      // Map document fields to DocumentItem array
+      const documentList: DocumentItem[] = documentFields.map(field => {
+        const imagePath = partnerData[field.fieldKey]
+        
+        return {
+          name: field.name,
+          fieldKey: field.fieldKey,
+          imagePath: imagePath || null,
+          status: imagePath ? "verified" : "not_uploaded"
+        }
+      })
+
+      setDocuments(documentList)
+    } catch (err) {
+      console.error("Error fetching partner documents:", err)
+      setError("Failed to fetch partner documents")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'verified':
-        return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Verified</Badge>
+        return (
+          <Badge className="bg-green-100 text-green-800 border-green-200">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Verified
+          </Badge>
+        )
       case 'pending':
-        return <Badge variant="outline"><Clock className="w-3 h-3 mr-1" />Pending</Badge>
-      case 'rejected':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>
+        return (
+          <Badge variant="outline" className="border-yellow-300 text-yellow-700">
+            <Clock className="w-3 h-3 mr-1" />
+            Pending
+          </Badge>
+        )
+      case 'not_uploaded':
+        return (
+          <Badge variant="secondary">
+            <XCircle className="w-3 h-3 mr-1" />
+            Not Uploaded
+          </Badge>
+        )
       default:
         return <Badge variant="secondary">{status}</Badge>
+    }
+  }
+
+  const handleViewDocument = (imagePath: string) => {
+    if (imagePath) {
+      window.open(imagePath, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -82,7 +131,29 @@ export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionPr
     total: documents.length,
     verified: documents.filter(d => d.status === 'verified').length,
     pending: documents.filter(d => d.status === 'pending').length,
-    rejected: documents.filter(d => d.status === 'rejected').length
+    notUploaded: documents.filter(d => d.status === 'not_uploaded').length
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <span className="ml-3 text-lg">Loading documents...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card className="border-red-200 bg-red-50">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3 text-red-800">
+            <AlertCircle className="w-5 h-5" />
+            <p>{error}</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -94,7 +165,7 @@ export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionPr
             <div className="flex items-center gap-3">
               <FileText className="w-5 h-5 text-blue-600" />
               <div>
-                <p className="text-sm font-medium">Total</p>
+                <p className="text-sm font-medium text-gray-600">Total</p>
                 <p className="text-2xl font-bold">{documentStats.total}</p>
               </div>
             </div>
@@ -106,7 +177,7 @@ export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionPr
             <div className="flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-600" />
               <div>
-                <p className="text-sm font-medium">Verified</p>
+                <p className="text-sm font-medium text-gray-600">Verified</p>
                 <p className="text-2xl font-bold">{documentStats.verified}</p>
               </div>
             </div>
@@ -118,7 +189,7 @@ export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionPr
             <div className="flex items-center gap-3">
               <Clock className="w-5 h-5 text-yellow-600" />
               <div>
-                <p className="text-sm font-medium">Pending</p>
+                <p className="text-sm font-medium text-gray-600">Pending</p>
                 <p className="text-2xl font-bold">{documentStats.pending}</p>
               </div>
             </div>
@@ -128,10 +199,10 @@ export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionPr
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <XCircle className="w-5 h-5 text-red-600" />
+              <XCircle className="w-5 h-5 text-gray-600" />
               <div>
-                <p className="text-sm font-medium">Rejected</p>
-                <p className="text-2xl font-bold">{documentStats.rejected}</p>
+                <p className="text-sm font-medium text-gray-600">Not Uploaded</p>
+                <p className="text-2xl font-bold">{documentStats.notUploaded}</p>
               </div>
             </div>
           </CardContent>
@@ -147,42 +218,56 @@ export function PartnerDocumentsSection({ partnerId }: PartnerDocumentsSectionPr
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Document Type</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Upload Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Verified Date</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {documents.map((doc) => (
-                  <TableRow key={doc.id}>
-                    <TableCell>
-                      <Badge variant="outline">{doc.type}</Badge>
-                    </TableCell>
-                    <TableCell className="font-medium">{doc.name}</TableCell>
-                    <TableCell>{doc.uploadDate}</TableCell>
-                    <TableCell>{getStatusBadge(doc.status)}</TableCell>
-                    <TableCell>{doc.verifiedDate || "—"}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="sm">
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="rounded-md border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Document Name
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {documents.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-6 py-8 text-center text-gray-500">
+                        No documents found
+                      </td>
+                    </tr>
+                  ) : (
+                    documents.map((doc) => (
+                      <tr key={doc.fieldKey} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
+                          {doc.name}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {getStatusBadge(doc.status)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewDocument(doc.imagePath!)}
+                            disabled={!doc.imagePath}
+                            className="gap-2"
+                          >
+                            <Eye className="w-4 h-4" />
+                            View
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </CardContent>
       </Card>

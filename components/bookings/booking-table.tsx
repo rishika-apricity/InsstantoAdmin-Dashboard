@@ -57,28 +57,28 @@ const PAGE_SIZE = 20;
 // Specific customer IDs to filter by
 const PROVIDER_IDS = [
   "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
-  "Dmoo33tCx0OU1HMtapISBc9Oeeq2", 
+  "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
   "VxxapfO7l8YM5f6xmFqpThc17eD3"
 ];
 
 export function BookingTable() {
   const db = getFirestoreDb();
-  
+
   // All data states
   const [allBookings, setAllBookings] = useState<BookingDoc[]>([]);
   const [customerMap, setCustomerMap] = useState<Record<string, PartyInfo>>({});
   const [providerMap, setProviderMap] = useState<Record<string, PartyInfo>>({});
   const [servicesMap, setServicesMap] = useState<Record<string, CartService[]>>({});
-  
+
   // UI states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  
+
   const from = Timestamp.fromDate(new Date('2025-08-01T00:00:00Z')) // August 1, 2025
   const to = Timestamp.fromDate(new Date('2025-08-30T23:59:59Z')) // August 30, 2025
-  
+
   // Pagination for filtered results
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -88,31 +88,28 @@ export function BookingTable() {
   }, [db]);
 
   // ----- Fetch All Data Initially -----
+  // ----- Fetch All Data Initially -----
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
       setError("");
-      
+
       try {
-        // Fetch all bookings for the specified providers
+        // Fetch ALL bookings (no provider filter)
         const allBookingsQuery = query(
           collection(db, "bookings"),
-          where("provider_id", "in", providerRefs),
-          // where("booking_date", ">=", from),
-          // where("booking_date", "<=", to),
           orderBy("booking_date", "desc")
         );
 
         const snapshot = await getDocs(allBookingsQuery);
         const docs: BookingDoc[] = snapshot.docs.map((d) => ({
           id: d.id,
-          ...(d.data() as any)
+          ...(d.data() as any),
         }));
-        
+
         setAllBookings(docs);
         await hydrateParties(docs);
         await hydrateServices(docs);
-        
       } catch (e: any) {
         setError(e.message ?? "Failed to load bookings.");
       } finally {
@@ -121,36 +118,32 @@ export function BookingTable() {
     };
 
     fetchAllData();
-  }, [db, providerRefs]);
+  }, [db]);
 
   // ----- Real-time updates for new bookings -----
   useEffect(() => {
     if (allBookings.length === 0) return;
 
-    // Set up real-time listener for new bookings
     const realtimeQuery = query(
       collection(db, "bookings"),
-      where("provider_id", "in", providerRefs),
       orderBy("booking_date", "desc"),
       limit(5) // Only listen for recent bookings
     );
 
     const unsub = onSnapshot(realtimeQuery, async (snapshot) => {
       const newDocs: BookingDoc[] = [];
-      
-      snapshot.docChanges().forEach(async (change) => {
+
+      snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           const doc = { id: change.doc.id, ...(change.doc.data() as any) };
-          // Check if this booking is not already in our list
-          if (!allBookings.some(booking => booking.id === doc.id)) {
+          if (!allBookings.some((booking) => booking.id === doc.id)) {
             newDocs.push(doc);
           }
         }
       });
 
       if (newDocs.length > 0) {
-        setAllBookings(prev => {
-          // Add new bookings and sort by date
+        setAllBookings((prev) => {
           const combined = [...newDocs, ...prev];
           return combined.sort((a, b) => {
             const dateA = a.date?.toDate?.() || new Date(0);
@@ -158,15 +151,15 @@ export function BookingTable() {
             return dateB.getTime() - dateA.getTime();
           });
         });
-        
-        // Hydrate data for new bookings
+
         await hydrateParties(newDocs);
         await hydrateServices(newDocs);
       }
     });
 
     return () => unsub();
-  }, [db, providerRefs, allBookings.length]);
+  }, [db, allBookings.length]);
+
 
   // ----- Hydrate Customer and Provider Data -----
   const hydrateParties = async (docs: BookingDoc[]) => {
@@ -235,20 +228,20 @@ export function BookingTable() {
           try {
             // Create reference to the sub_categoryCart document
             const subCategoryCartRef = doc(db, "sub_categoryCart", serviceId);
-            
+
             // Query cart collection where subCategoryCartId matches the reference
             const cartQuery = query(
               collection(db, "cart"),
               where("subCategoryCartId", "==", subCategoryCartRef)
             );
-            
+
             const cartSnapshot = await getDocs(cartQuery);
             const cartServices: CartService[] = cartSnapshot.docs.map(cartDoc => ({
               id: cartDoc.id,
               serviceName: cartDoc.data().service_name,
               subCategoryCartId: cartDoc.data().subCategoryCartId
             }));
-            
+
             newServicesData[serviceId] = cartServices;
           } catch (error) {
             console.warn(`Failed to fetch services for ${serviceId}:`, error);
@@ -265,14 +258,14 @@ export function BookingTable() {
 
   // ----- Helper Functions -----
   const normalize = (v: unknown) => (v ?? "").toString().toLowerCase();
-const displayDate = (b: BookingDoc): Date | null => {
-  const t = b.date; // Use the `date` field instead of `booking_date`
-  return t?.toDate ? t.toDate() : null;
-};
-const displayTimeSlot = (b: BookingDoc): Date | null => {
-  const timeSlot = b.timeSlot; // Use the `timeSlot` field
-  return timeSlot ? timeSlot.toDate() : null;
-};
+  const displayDate = (b: BookingDoc): Date | null => {
+    const t = b.date; // Use the `date` field instead of `booking_date`
+    return t?.toDate ? t.toDate() : null;
+  };
+  const displayTimeSlot = (b: BookingDoc): Date | null => {
+    const timeSlot = b.timeSlot; // Use the `timeSlot` field
+    return timeSlot ? timeSlot.toDate() : null;
+  };
   const getServicesForBooking = (booking: BookingDoc): CartService[] => {
     if (!booking.subCategoryCart_id) return [];
     return servicesMap[booking.subCategoryCart_id] || [];
@@ -281,11 +274,11 @@ const displayTimeSlot = (b: BookingDoc): Date | null => {
   // ----- Filter and Search Logic -----
   const filteredBookings = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    
+
     return allBookings.filter((b) => {
       const services = getServicesForBooking(b);
       const serviceNames = services.map(s => s.serviceName).join(" ");
-      
+
       const text = [
         b.id,
         customerMap[b.customer_id?.path ?? ""]?.name,
@@ -344,12 +337,12 @@ const displayTimeSlot = (b: BookingDoc): Date | null => {
   const inferredPaymentStatus = (b: BookingDoc) => (amountPaid(b) > 0 ? "paid" : "pending");
 
   const statusColors: Record<string, string> = {
-    pending: "bg-orange-100 text-orange-800 hover:bg-orange-200",
-    confirmed: "bg-blue-100 text-blue-800 hover:bg-blue-200",
+    Pending: "bg-orange-100 text-orange-800 hover:bg-orange-200",
+    Accepted: "bg-blue-100 text-blue-800 hover:bg-blue-200",
     accepted: "bg-blue-100 text-blue-800 hover:bg-blue-200",
-    "in-progress": "bg-purple-100 text-purple-800 hover:bg-purple-200",
-    completed: "bg-green-100 text-green-800 hover:bg-green-200",
-    cancelled: "bg-red-100 text-red-800 hover:bg-red-200",
+    "In Progress": "bg-purple-100 text-purple-800 hover:bg-purple-200",
+    Service_Completed: "bg-green-100 text-green-800 hover:bg-green-200",
+    Cancelled: "bg-red-100 text-red-800 hover:bg-red-200",
     rescheduled: "bg-yellow-100 text-yellow-800 hover:bg-yellow-200",
     default: "bg-gray-100 text-gray-800",
   };
@@ -368,8 +361,7 @@ const displayTimeSlot = (b: BookingDoc): Date | null => {
           Booking Management (Filtered)
         </CardTitle>
         <CardDescription>
-          Manage and monitor bookings for specific providers ({PROVIDER_IDS.length} providers)
-          - {filteredBookings.length} total bookings
+          Manage and monitor bookings
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -396,8 +388,8 @@ const displayTimeSlot = (b: BookingDoc): Date | null => {
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="accepted">Accepted</SelectItem>
-                <SelectItem value="in-progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="in progress">In Progress</SelectItem>
+                <SelectItem value="service_completed">Completed</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
                 <SelectItem value="rescheduled">Rescheduled</SelectItem>
               </SelectContent>
@@ -427,9 +419,8 @@ const displayTimeSlot = (b: BookingDoc): Date | null => {
                 <TableHead>Time Slot</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Amount</TableHead>
-                <TableHead>Payment</TableHead>
                 <TableHead>Address</TableHead>
-                <TableHead>Actions</TableHead>
+                {/* <TableHead>Actions</TableHead> */}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -503,17 +494,12 @@ const displayTimeSlot = (b: BookingDoc): Date | null => {
                         </Badge>
                       </TableCell>
                       <TableCell>₹{amountPaid(b).toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Badge className={paymentStatusColors[inferredPaymentStatus(b)]}>
-                          {inferredPaymentStatus(b)}
-                        </Badge>
-                      </TableCell>
                       <TableCell className="max-w-[150px] truncate">{b.bookingAddress || "—"}</TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         <Button variant="ghost" size="sm">
                           View
                         </Button>
-                      </TableCell>
+                      </TableCell> */}
                     </TableRow>
                   );
                 })
@@ -525,7 +511,7 @@ const displayTimeSlot = (b: BookingDoc): Date | null => {
         {/* Pagination */}
         <div className="flex items-center justify-between mt-4">
           <div className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages || 1} 
+            Page {currentPage} of {totalPages || 1}
             {filteredBookings.length > 0 && (
               <span className="ml-2">
                 ({((currentPage - 1) * PAGE_SIZE) + 1}-{Math.min(currentPage * PAGE_SIZE, filteredBookings.length)} of {filteredBookings.length})
