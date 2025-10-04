@@ -38,7 +38,7 @@ export async function fetchBookingStats(): Promise<BookingStats> {
     // Queries
     const totalBookingsQuery = query(
         bookingsCol,
-        where("provider_id", "in", customerRefs)
+        where("provider_id", "in", customerRefs),
     )
     const pendingQuery = query(bookingsCol, where("status", "==", "Pending"))
     const confirmedQuery = query(
