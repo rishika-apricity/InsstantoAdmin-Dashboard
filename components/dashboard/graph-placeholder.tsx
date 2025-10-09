@@ -165,8 +165,9 @@ export function GraphPlaceholder({
   }
 
   return (
-    <Card className={className}>
-      <CardHeader>
+
+<Card className={`border-l-4 border-gray-300 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md ${className}`}>
+<CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Icon className={`h-5 w-5 ${iconColor.replace("/50", "")}`} />
           {title}

@@ -39,6 +39,7 @@ export default function BookingStats() {
       icon: Calendar,
       color: "text-teal-600",
       bgColor: "bg-teal-100",
+      borderColor: "border-teal-600"
     },
     {
       title: "Completed Bookings",
@@ -47,6 +48,7 @@ export default function BookingStats() {
       icon: Users,
       color: "text-blue-600",
       bgColor: "bg-blue-100",
+      borderColor: "border-blue-600"
     },
     {
       title: "Pending Bookings",
@@ -55,6 +57,7 @@ export default function BookingStats() {
       icon: Clock,
       color: "text-orange-600",
       bgColor: "bg-orange-100",
+      borderColor: "border-orange-600"
     },
     {
       title: "Accepted Bookings",
@@ -63,8 +66,8 @@ export default function BookingStats() {
       icon: CheckCircle,
       color: "text-green-600",
       bgColor: "bg-green-100",
+      borderColor: "border-green-600"
     },
-  
     {
       title: "Total Revenue",
       value: `₹${Math.round(stats.totalRevenue).toLocaleString()}`,
@@ -72,6 +75,7 @@ export default function BookingStats() {
       icon: DollarSign,
       color: "text-emerald-600",
       bgColor: "bg-emerald-100",
+      borderColor: "border-emerald-600"
     },
     {
       title: "Avg. Rating",
@@ -80,6 +84,7 @@ export default function BookingStats() {
       icon: Star,
       color: "text-yellow-600",
       bgColor: "bg-yellow-100",
+      borderColor: "border-yellow-600"
     },
     {
       title: "Completion Rate",
@@ -88,6 +93,7 @@ export default function BookingStats() {
       icon: TrendingUp,
       color: "text-purple-600",
       bgColor: "bg-purple-100",
+      borderColor: "border-purple-600"
     },
     {
       title: "Cancelled Bookings",
@@ -96,16 +102,20 @@ export default function BookingStats() {
       icon: XCircle,
       color: "text-red-600",
       bgColor: "bg-red-100",
+      borderColor: "border-red-600"
     },
   ]
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {cards.map((c) => (
-        <Card key={c.title} className="hover:shadow-md transition-shadow">
+        <Card
+          key={c.title}
+          className={`border-l-4 ${c.borderColor} ${c.bgColor} shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md`}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{c.title}</CardTitle>
-            <div className={`p-2 rounded-lg ${c.bgColor}`}>
+            <div className={`p-2 rounded-lg ${c.bgColor.replace("100", "200")}`}>
               <c.icon className={`h-4 w-4 ${c.color}`} />
             </div>
           </CardHeader>

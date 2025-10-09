@@ -6,7 +6,7 @@ export type TimeSlot = {
     bookings: number;
 };
 
-export async function fetchMostBookedSlots(): Promise<TimeSlot[]> {
+export async function fetchMostBookedSlots(fromDate: string, toDate: string): Promise<TimeSlot[]> {
     const db = getFirestoreDb();
 
     // Fetch all completed bookings

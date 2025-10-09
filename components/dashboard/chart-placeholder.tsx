@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { LucideIcon } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList } from "recharts"
-import { doc,collection, query, where, getDocs } from "firebase/firestore"
+import { doc, collection, query, where, getDocs } from "firebase/firestore"
 import { getFirestoreDb } from "@/lib/firebase" // Ensure this imports the Firestore initialization
 
 interface ChartPlaceholderProps {
@@ -99,8 +99,9 @@ export function ChartPlaceholder({
   }, [])
 
   return (
-    <Card className={className}>
-      <CardHeader>
+
+<Card className={`border-l-4 border-gray-300 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md ${className}`}>
+<CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Icon className={`h-5 w-5 ${iconColor.replace("/50", "")}`} />
           {title}

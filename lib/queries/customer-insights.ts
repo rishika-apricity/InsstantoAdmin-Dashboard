@@ -12,7 +12,7 @@ export interface CustomerStats {
 
 }
 
-export async function fetchNewVsRepeatCustomers(): Promise<CustomerStats> {
+export async function fetchNewVsRepeatCustomers(fromDate: string, toDate: string): Promise<CustomerStats> {
     const db = getFirestoreDb();
 
     // 1. Fetch all customers

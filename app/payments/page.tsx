@@ -94,10 +94,7 @@ export default function PaymentsPage() {
             {/* Filters */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
-                <h1 className="text-3xl font-bold tracking-tight">
-                  Payment Management
-                </h1>
-                <p className="text-muted-foreground">
+                <p className="text-muted-foreground text-lg font-semibold">
                   Monitor, track, and manage all payment & settlement data
                 </p>
               </div>
@@ -108,6 +105,7 @@ export default function PaymentsPage() {
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                   className="border rounded px-2 py-1"
+                  max={formatDateInput(today)}  /* Disable future dates */
                 />
                 <span>to</span>
                 <input
@@ -115,6 +113,7 @@ export default function PaymentsPage() {
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                   className="border rounded px-2 py-1"
+                  max={formatDateInput(today)}  /* Disable future dates */
                 />
                 <button
                   onClick={clearFilter}

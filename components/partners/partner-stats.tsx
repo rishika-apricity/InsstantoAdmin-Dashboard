@@ -52,7 +52,6 @@ export function PartnerStats() {
         })
 
         const partnersData: Partner[] = []
-
         const pushPartner = (docSnap: any, type: "provider" | "agency") => {
           const d = docSnap.data()
           const wallet = walletMap[docSnap.id] || { earnings: 0, pendingPayouts: 0 }
@@ -87,9 +86,7 @@ export function PartnerStats() {
     fetchPartners()
   }, [])
 
-  if (loading) {
-    return <div>Loading stats...</div>
-  }
+  if (loading) return <div>Loading stats...</div>
 
   // === Aggregate Stats ===
   const totalPartners = partners.filter((p) => p.type === "provider").length
@@ -106,35 +103,45 @@ export function PartnerStats() {
       title: "Total Partners",
       value: totalPartners.toString(),
       icon: Users,
-      color: "text-primary",
+      border: "border-blue-600",
+      bg: "bg-blue-50",
+      text: "text-blue-700",
       description: "All registered partners",
     },
     {
       title: "Total Agency",
       value: totalAgency.toString(),
       icon: UserCheck,
-      color: "text-green-600",
+      border: "border-green-600",
+      bg: "bg-green-50",
+      text: "text-green-700",
       description: "Agency partners onboarded",
     },
     {
       title: "Pending Verification",
-      value: "0",
+      value: pendingVerification.toString(),
       icon: Clock,
-      color: "text-yellow-600",
+      border: "border-yellow-600",
+      bg: "bg-yellow-50",
+      text: "text-yellow-700",
       description: "Awaiting KYC approval",
     },
     {
       title: "Total Earnings",
       value: formatCurrency(totalEarnings),
       icon: DollarSign,
-      color: "text-chart-3",
+      border: "border-purple-600",
+      bg: "bg-purple-50",
+      text: "text-purple-700",
       description: "Partner earnings to date",
     },
     {
       title: "Pending Payouts",
       value: formatCurrency(pendingPayouts),
       icon: AlertTriangle,
-      color: "text-secondary",
+      border: "border-orange-600",
+      bg: "bg-orange-50",
+      text: "text-orange-700",
       description: "Awaiting payment",
     },
   ]
@@ -142,13 +149,16 @@ export function PartnerStats() {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6">
       {stats.map((stat, idx) => (
-        <Card key={`${stat.title}-${idx}`}>
+        <Card
+          key={`${stat.title}-${idx}`}
+          className={`border-l-4 ${stat.border} ${stat.bg} shadow-sm hover:shadow-md transition-transform hover:scale-[1.02]`}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-            <stat.icon className={`h-4 w-4 ${stat.color}`} />
+            <CardTitle className={`text-sm font-medium ${stat.text}`}>{stat.title}</CardTitle>
+            <stat.icon className={`h-5 w-5 ${stat.text}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stat.value}</div>
+            <div className={`text-2xl font-bold ${stat.text}`}>{stat.value}</div>
             <p className="text-xs text-muted-foreground">{stat.description}</p>
           </CardContent>
         </Card>

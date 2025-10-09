@@ -1,164 +1,254 @@
-"use client"
+"use client";
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { Clock, Star, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { fetchTopCategories, type TopCategory } from "@/lib/queries/top-services";
+import { fetchMostBookedSlots, type TimeSlot } from "@/lib/queries/most-booked-slots";
+import { fetchNewVsRepeatCustomers } from "@/lib/queries/customer-insights";
 
-import { useEffect, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Clock, Star, TrendingUp } from "lucide-react"
-import { fetchTopServices, type TopService } from "@/lib/queries/top-services"
-import { fetchMostBookedSlots, type TimeSlot } from "@/lib/queries/most-booked-slots"
-import { fetchNewVsRepeatCustomers } from "@/lib/queries/customer-insights"  // import the helper function
-
-type TimeSlotWithPercentage = TimeSlot & { percentage: number }
+type TimeSlotWithPercentage = TimeSlot & { percentage: number };
 
 const customerMetrics = [
-  { label: "Customer Satisfaction", value: "4.8/5", count: "2,156 reviews" },
-]
+  {
+    label: "Customer Satisfaction",
+    value: "4.8/5",
+    count: "2,156 reviews",
+  },
+];
 
-export function PerformanceMetrics() {
-  const [topServices, setTopServices] = useState<TopService[]>([])
-  const [peakHours, setPeakHours] = useState<TimeSlotWithPercentage[]>([])
-  const [repeatCustomerCount, setRepeatCustomerCount] = useState<number>(0)
-  const [newCustomerCount, setNewCustomerCount] = useState<number>(0)
-  const [averageRating, setaverageRating] = useState<number>(0)
-  const [totalRatings, settotalRatings] = useState<number>(0)
+const ITEMS_PER_PAGE = 5;
+
+export function PerformanceMetrics({
+  fromDate,
+  toDate,
+}: {
+  fromDate: string;
+  toDate: string;
+}) {
+  const [topCategories, setTopCategories] = useState<TopCategory[]>([]);
+  const [peakHours, setPeakHours] = useState<TimeSlotWithPercentage[]>([]);
+  const [repeatCustomerCount, setRepeatCustomerCount] = useState<number>(0);
+  const [newCustomerCount, setNewCustomerCount] = useState<number>(0);
+  const [averageRating, setAverageRating] = useState<number>(0);
+  const [totalRatings, setTotalRatings] = useState<number>(0);
+  const [categoriesPage, setCategoriesPage] = useState(1);
+  const [peakHoursPage, setPeakHoursPage] = useState(1);
 
   useEffect(() => {
-    const loadServices = async () => {
-      const services = await fetchTopServices()
-      setTopServices(services)
-    }
+    const loadCategories = async () => {
+      const categories = await fetchTopCategories(fromDate, toDate);
+      setTopCategories(categories);
+    };
 
     const loadSlots = async () => {
-      const slots = await fetchMostBookedSlots()
-
-      // total of all bookings across slots
-      const totalBookings = slots.reduce((sum, s) => sum + s.bookings, 0) || 1
-
-      const slotsWithPercent: TimeSlotWithPercentage[] = slots.map(s => ({
+      const slots = await fetchMostBookedSlots(fromDate, toDate);
+      const totalBookings = slots.reduce((sum, s) => sum + s.bookings, 0) || 1;
+      const slotsWithPercent: TimeSlotWithPercentage[] = slots.map((s) => ({
         ...s,
         percentage: Math.round((s.bookings / totalBookings) * 100),
-      }))
-
-      setPeakHours(slotsWithPercent)
-    }
+      }));
+      setPeakHours(slotsWithPercent);
+    };
 
     const loadCustomerCounts = async () => {
       try {
-        const data = await fetchNewVsRepeatCustomers() // fetch counts
-        setRepeatCustomerCount(data.repeatCustomerCount)
-        setNewCustomerCount(data.newCustomerCount)
-        setaverageRating(data.averageRating)
-        settotalRatings(data.totalRatings)
+        const data = await fetchNewVsRepeatCustomers(fromDate, toDate);
+        setRepeatCustomerCount(data.repeatCustomerCount);
+        setNewCustomerCount(data.newCustomerCount);
+        setAverageRating(data.averageRating);
+        setTotalRatings(data.totalRatings);
       } catch (error) {
-        console.error("Error fetching customer counts:", error)
+        console.error("Error fetching customer counts:", error);
       }
-    }
+    };
 
-    loadServices()
-    loadSlots()
-    loadCustomerCounts()  // fetch the counts for repeat and new customers
-  }, [])
+    loadCategories();
+    loadSlots();
+    loadCustomerCounts();
+  }, [fromDate, toDate]);
+
+  const totalCategoriesPages = Math.ceil(topCategories.length / ITEMS_PER_PAGE);
+  const paginatedCategories = topCategories.slice(
+    (categoriesPage - 1) * ITEMS_PER_PAGE,
+    categoriesPage * ITEMS_PER_PAGE
+  );
+
+  const totalPeakHoursPages = Math.ceil(peakHours.length / ITEMS_PER_PAGE);
+  const paginatedPeakHours = peakHours.slice(
+    (peakHoursPage - 1) * ITEMS_PER_PAGE,
+    peakHoursPage * ITEMS_PER_PAGE
+  );
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {/* Peak Hours */}
-      <Card>
+      <Card className="border-l-4 border-blue-500 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-secondary" />
-            Peak Hours
+          <CardTitle className="flex items-center gap-2 text-muted-foreground font-bold">
+            <Clock className="h-5 w-5 text-blue-500" /> Peak Hours
           </CardTitle>
-          <CardDescription>Most active booking times today</CardDescription>
+          <CardDescription className="text-muted-foreground">
+            Most active booking times today
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {peakHours.length === 0 ? (
               <p className="text-sm text-muted-foreground">No data available</p>
             ) : (
-              peakHours.slice(0, 5).map((hour, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{hour.time}</span>
-                  <div className="flex items-center gap-3">
-                    <Progress value={hour.percentage} className="w-16 h-2" />
-                    <span className="text-sm text-muted-foreground w-8">{hour.percentage}%</span>
-                    <Badge variant="outline" className="text-xs">
-                      {hour.bookings}
-                    </Badge>
+              <>
+                {paginatedPeakHours.map((hour, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{hour.time}</span>
+                    <div className="flex items-center gap-3">
+                      <Progress value={hour.percentage} className="w-16 h-2" />
+                      <span className="text-sm text-muted-foreground w-8">
+                        {hour.percentage}%
+                      </span>
+                      <Badge variant="outline" className="text-xs">
+                        {hour.bookings}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+                {/* Pagination Controls */}
+                {totalPeakHoursPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPeakHoursPage((p) => Math.max(1, p - 1))}
+                      disabled={peakHoursPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Page {peakHoursPage} of {totalPeakHoursPages}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPeakHoursPage((p) => Math.min(totalPeakHoursPages, p + 1))}
+                      disabled={peakHoursPage === totalPeakHoursPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Top Services */}
-      <Card>
+      {/* Top Categories */}
+      <Card className="border-l-4 border-purple-500 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-chart-3" />
-            Top Services
+          <CardTitle className="flex items-center gap-2 text-muted-foreground font-bold">
+            <Star className="h-5 w-5 text-purple-500" /> Top Categories
           </CardTitle>
-          <CardDescription>By booking volume</CardDescription>
+          <CardDescription className="text-muted-foreground">By booking volume</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {topServices.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No bookings found</p>
-            ) : (
-              topServices.map((service, index) => (
+          {topCategories.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No bookings found</p>
+          ) : (
+            <div className="space-y-3">
+              {paginatedCategories.map((category, index) => (
                 <div key={index} className="flex items-center justify-between">
                   <div className="flex-1">
-                    <span className="text-sm font-medium">{service.name}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {category.categoryName}
+                      </span>
+                      <Badge variant="outline">{category.totalBookings}</Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground block mt-0.5">
+                      {category.topService}
+                    </span>
                   </div>
-                  <Badge variant="outline">{service.bookings}</Badge>
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+              {/* Pagination Controls */}
+              {totalCategoriesPages > 1 && (
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCategoriesPage((p) => Math.max(1, p - 1))}
+                    disabled={categoriesPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {categoriesPage} of {totalCategoriesPages}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCategoriesPage((p) => Math.min(totalCategoriesPages, p + 1))}
+                    disabled={categoriesPage === totalCategoriesPages}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Customer Metrics */}
-      <Card>
+      {/* Customer Insights */}
+      <Card className="border-l-4 border-green-500 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            Customer Insights
+          <CardTitle className="flex items-center gap-2 text-muted-foreground font-bold">
+            <TrendingUp className="h-5 w-5 text-green-500" /> Customer Insights
           </CardTitle>
-          <CardDescription>Customer behavior and satisfaction</CardDescription>
+          <CardDescription className="text-muted-foreground">
+            Customer behavior and satisfaction
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Add dynamic data for Repeat and New Customers */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-white/70">
               <div>
-                <p className="text-sm font-medium">Repeat Customers</p>
+                <p className="text-sm font-medium text-muted-foreground">Repeat Customers</p>
                 <p className="text-xs text-muted-foreground">{repeatCustomerCount}</p>
               </div>
               <div className="text-right">
-                <p className="text-lg font-bold text-primary">{Math.round((repeatCustomerCount / (repeatCustomerCount + newCustomerCount)) * 100)}%</p>
+                <p className="text-lg font-bold text-green-600">
+                  {Math.round(
+                    (repeatCustomerCount / (repeatCustomerCount + newCustomerCount || 1)) * 100
+                  )}{" "}
+                  %
+                </p>
               </div>
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-white/70">
               <div>
-                <p className="text-sm font-medium">New Customers</p>
+                <p className="text-sm font-medium text-muted-foreground">New Customers</p>
                 <p className="text-xs text-muted-foreground">{newCustomerCount}</p>
               </div>
               <div className="text-right">
-                <p className="text-lg font-bold text-primary">{Math.round((newCustomerCount / (repeatCustomerCount + newCustomerCount)) * 100)}%</p>
+                <p className="text-lg font-bold text-green-600">
+                  {Math.round(
+                    (newCustomerCount / (repeatCustomerCount + newCustomerCount || 1)) * 100
+                  )}{" "}
+                  %
+                </p>
               </div>
             </div>
-            {/* Static customer satisfaction metric */}
             {customerMetrics.map((metric, index) => (
-              <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+              <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-white/70">
                 <div>
-                  <p className="text-sm font-medium">{metric.label}</p>
+                  <p className="text-sm font-medium text-muted-foreground">{metric.label}</p>
                   <p className="text-xs text-muted-foreground">{totalRatings}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-primary">{averageRating}/5</p>
+                  <p className="text-lg font-bold text-green-600">{averageRating}/5</p>
                 </div>
               </div>
             ))}
@@ -166,5 +256,5 @@ export function PerformanceMetrics() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

@@ -36,7 +36,7 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
   return (
     <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7">
       {/* Total Payments */}
-      <Card className="p-4 border-l-4 border-blue-500 shadow-sm flex flex-col gap-2">
+      <Card className="p-4 border-l-4 border-blue-500 bg-blue-50 shadow-sm flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <Wallet className="h-6 w-6 text-blue-500" />
           <h2 className="text-sm text-muted-foreground">Total Payments</h2>
@@ -45,7 +45,7 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
       </Card>
 
       {/* Successful */}
-      <Card className="p-4 border-l-4 border-green-500 shadow-sm flex flex-col gap-2">
+      <Card className="p-4 border-l-4 border-green-500 bg-green-50 shadow-sm flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <CheckCircle className="h-6 w-6 text-green-500" />
           <h2 className="text-sm text-muted-foreground">Successful</h2>
@@ -57,7 +57,7 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
       </Card>
 
       {/* Failed */}
-      <Card className="p-4 border-l-4 border-red-500 shadow-sm flex flex-col gap-2">
+      <Card className="p-4 border-l-4 border-red-500 bg-red-50 shadow-sm flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <XCircle className="h-6 w-6 text-red-500" />
           <h2 className="text-sm text-muted-foreground">Failed</h2>
@@ -66,7 +66,7 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
       </Card>
 
       {/* Refunded */}
-      <Card className="p-4 border-l-4 border-orange-500 shadow-sm flex flex-col gap-2">
+      <Card className="p-4 border-l-4 border-orange-500 bg-orange-50 shadow-sm flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <RotateCcw className="h-6 w-6 text-orange-500" />
           <h2 className="text-sm text-muted-foreground">Refunded</h2>
@@ -78,7 +78,7 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
       </Card>
 
       {/* Total Amount */}
-      <Card className="p-4 border-l-4 border-purple-500 shadow-sm flex flex-col gap-2">
+      <Card className="p-4 border-l-4 border-purple-500 bg-purple-50 shadow-sm flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <IndianRupee className="h-6 w-6 text-purple-500" />
           <h2 className="text-sm text-muted-foreground">Total Amount</h2>
@@ -89,7 +89,7 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
       </Card>
 
       {/* Total Settlements */}
-      <Card className="p-4 border-l-4 border-teal-500 shadow-sm flex flex-col gap-2">
+      <Card className="p-4 border-l-4 border-teal-500 bg-teal-50 shadow-sm flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <Building className="h-6 w-6 text-teal-500" />
           <h2 className="text-sm text-muted-foreground">Settlements</h2>
@@ -98,7 +98,7 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
       </Card>
 
       {/* Settlement Amount */}
-      <Card className="p-4 border-l-4 border-indigo-500 shadow-sm flex flex-col gap-2">
+      <Card className="p-4 border-l-4 border-indigo-500 bg-indigo-50 shadow-sm flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <Banknote className="h-6 w-6 text-indigo-500" />
           <h2 className="text-sm text-muted-foreground">Settlement Amount</h2>
