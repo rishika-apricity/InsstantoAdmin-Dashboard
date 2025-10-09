@@ -42,7 +42,8 @@ import {
   Clock,
   Loader2,
   BarChart3,
-  Briefcase
+  Briefcase,
+  MessageSquare,
 } from "lucide-react"
 
 // Import the section components
@@ -52,6 +53,7 @@ import { PartnerCreditsSection } from "./sections/partner-credits"
 import { PartnerDocumentsSection } from "./sections/partner-documents"
 import { PartnerChemicalsSection } from "./sections/partner-chemicals"
 import { PartnerLoansSection } from "./sections/partner-loans"
+import { PartnerReviewsSection } from "./sections/partner-review" // 🔹 NEW
 
 type PartnerDoc = {
   id: string
@@ -72,6 +74,8 @@ type PartnerDoc = {
   services?: string[]
   ratings_average?: number
   total_reviews?: number
+  completedBookings?: number   // ✅ add
+  totalBookings?: number
 }
 
 type WalletDoc = {
@@ -96,9 +100,95 @@ export default function PartnerDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [walletLoading, setWalletLoading] = useState(true)
   const [error, setError] = useState("")
-  const [activeTab, setActiveTab] = useState("earnings")
+  const [activeTab, setActiveTab] = useState("earnings") // ✅ FIXED
+  const [workingDays, setWorkingDays] = useState(0)
+  const [nonWorkingDays, setNonWorkingDays] = useState(0)
+
+
 
   // Fetch partner details
+  // Fetch total + completed bookings
+useEffect(() => {
+  const fetchBookingsStats = async () => {
+    if (!partner?.id) return
+    try {
+      const partnerRef = doc(db, "customer", partner.id)
+      const bookingsQuery = query(
+        collection(db, "bookings"),
+        where("provider_id", "==", partnerRef)
+      )
+      const snapshot = await getDocs(bookingsQuery)
+
+      let total = snapshot.size
+      let completed = 0
+      let workingDaysSet = new Set<string>()
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data()
+
+        if (data.status?.toLowerCase() === "service_completed") {
+          completed++
+
+          if (data.timeSlot instanceof Timestamp) {
+            const date = data.timeSlot.toDate()
+            const now = new Date()
+
+            if (
+              date.getMonth() === now.getMonth() &&
+              date.getFullYear() === now.getFullYear()
+            ) {
+              workingDaysSet.add(date.toDateString())
+            }
+          }
+        }
+      })
+
+      // ✅ total days in this month
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = now.getMonth()
+      const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+      const totalWorkingDays = workingDaysSet.size
+      const totalNonWorkingDays = daysInMonth - totalWorkingDays
+
+      setPartner(prev =>
+        prev ? { ...prev, totalBookings: total, completedBookings: completed } : prev
+      )
+      setWorkingDays(totalWorkingDays)
+      setNonWorkingDays(totalNonWorkingDays) // 👈 you'll need new state
+    } catch (err) {
+      console.error("Failed to fetch bookings stats:", err)
+    }
+  }
+
+  fetchBookingsStats()
+}, [partner?.id, db])
+
+
+
+
+  // Fetch wallet information
+  useEffect(() => {
+    const fetchWalletInfo = async () => {
+      if (!partner?.id) return
+      try {
+        setWalletLoading(true)
+        const partnerRef = doc(db, "customer", partner.id)
+        const walletQuery = query(collection(db, "Wallet_Overall"), where("service_partner_id", "==", partnerRef))
+        const snapshot = await getDocs(walletQuery)
+        if (!snapshot.empty) {
+          const [walletDoc] = snapshot.docs
+          if (walletDoc) {
+            setWalletInfo({ id: walletDoc.id, ...(walletDoc.data() as any) } as WalletDoc)
+          }
+        }
+      } catch (err: any) { console.error("Failed to load wallet info:", err) } finally { setWalletLoading(false) }
+    }
+
+    fetchWalletInfo()
+  }, [partner?.id, db])
+  // Fetch partner details (first step before stats)
   useEffect(() => {
     const fetchPartner = async () => {
       if (!partnerId) return
@@ -127,38 +217,8 @@ export default function PartnerDetailsPage() {
     fetchPartner()
   }, [partnerId, db])
 
-  // Fetch wallet information
-  useEffect(() => {
-    const fetchWalletInfo = async () => {
-      if (!partner?.id) return
 
-      try {
-        setWalletLoading(true)
-
-        const partnerRef = doc(db, "customer", partner.id)
-        const walletQuery = query(
-          collection(db, "Wallet_Overall"),
-          where("service_partner_id", "==", partnerRef)
-        )
-
-        const snapshot = await getDocs(walletQuery)
-        if (!snapshot.empty) {
-          const [walletDoc] = snapshot.docs
-          if (walletDoc) {
-            setWalletInfo({ id: walletDoc.id, ...(walletDoc.data() as any) } as WalletDoc)
-          }
-        }
-      } catch (err: any) {
-        console.error("Failed to load wallet info:", err)
-      } finally {
-        setWalletLoading(false)
-      }
-    }
-
-    fetchWalletInfo()
-  }, [partner?.id, db])
-
-  // Fetch reviews & ratings
+  // Fetch reviews & ratings summary
   useEffect(() => {
     const fetchReviews = async () => {
       if (!partner?.id) return
@@ -193,22 +253,23 @@ export default function PartnerDetailsPage() {
     fetchReviews()
   }, [partner?.id, db])
 
+
   // Helper functions
   const formatDate = (timestamp?: Timestamp) => {
     if (!timestamp?.toDate) return "—"
     return timestamp.toDate().toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
-      year: "numeric"
+      year: "numeric",
     })
   }
 
   const formatCurrency = (amount?: number) => {
-    if (typeof amount !== 'number') return "₹0"
+    if (typeof amount !== "number") return "₹0"
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(amount)
   }
 
@@ -219,14 +280,14 @@ export default function PartnerDetailsPage() {
 
   const getStatusBadge = (status?: string) => {
     switch (status?.toLowerCase()) {
-      case 'active':
-      case 'onboarded':
+      case "active":
+      case "onboarded":
         return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge>
-      case 'pending':
+      case "pending":
         return <Badge variant="outline"><Clock className="w-3 h-3 mr-1" />Pending</Badge>
-      case 'suspended':
+      case "suspended":
         return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Suspended</Badge>
-      case 'rejected':
+      case "rejected":
         return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>
       default:
         return <Badge variant="secondary">{status || "Unknown"}</Badge>
@@ -235,15 +296,15 @@ export default function PartnerDetailsPage() {
 
   const getKycBadge = (status?: string) => {
     switch (status?.toLowerCase()) {
-      case 'verified':
-      case 'approved':
+      case "verified":
+      case "approved":
         return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Verified</Badge>
-      case 'pending':
+      case "pending":
         return <Badge variant="outline"><Clock className="w-3 h-3 mr-1" />Pending</Badge>
-      case 'rejected':
+      case "rejected":
         return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>
       default:
-        return <Badge variant="secondary">{status || "Not Submitted"}</Badge>
+        return <Badge variant="secondary">{status || "Verified"}</Badge>
     }
   }
 
@@ -307,7 +368,8 @@ export default function PartnerDetailsPage() {
         <div className="flex flex-col sm:gap-4 sm:py-4">
           <AdminHeader title="Partner Management" />
           <main className="flex-1 space-y-6 p-4 md:p-6">
-            {/* Header with Back Button */}
+
+            {/* Back Button */}
             <div className="flex items-center gap-4">
               <Button variant="outline" onClick={() => router.back()}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -315,6 +377,8 @@ export default function PartnerDetailsPage() {
               </Button>
             </div>
 
+            {/* Partner Profile Card */}
+            {/* ... (profile & stats code unchanged for brevity) ... */}
             {/* Partner Profile Card */}
             <Card>
               <CardContent className="p-6">
@@ -367,7 +431,7 @@ export default function PartnerDetailsPage() {
                           <MapPin className="w-4 h-4 text-muted-foreground" />
                           <div>
                             <p className="text-sm font-medium">City</p>
-                            <p className="text-sm text-muted-foreground">{partner.city || "Not provided"}</p>
+                            <p className="text-sm text-muted-foreground">{partner.city || "Indore"}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -412,7 +476,7 @@ export default function PartnerDetailsPage() {
                         <div className="flex items-center gap-3">
                           <Wallet className="w-4 h-4 text-muted-foreground" />
                           <div>
-                            <p className="text-sm font-medium">Current Balance</p>
+                            <p className="text-sm font-medium">Pending Payout</p>
                             <p className="text-sm font-bold">
                               {walletLoading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : formatCurrency(walletInfo?.total_balance || 0)}
                             </p>
@@ -451,24 +515,48 @@ export default function PartnerDetailsPage() {
                     <div>
                       <p className="text-sm font-medium">Total Earnings</p>
                       <p className="text-2xl font-bold">{formatCurrency(walletInfo?.TotalAmountComeIn_Wallet || 0)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                                Total earnings after loan deductions till now
+                      </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
+
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-blue-100 rounded-lg">
-                      <Wallet className="w-5 h-5 text-blue-600" />
+                      <Calendar className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">Current Balance</p>
-                      <p className="text-2xl font-bold">{formatCurrency(walletInfo?.total_balance || 0)}</p>
+                      <p className="text-sm font-medium">Completed Bookings</p>
+                      <p className="text-2xl font-bold">{partner?.completedBookings || 0}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                                Total completed bookings till now
+                      </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Briefcase className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Working Days (This Month)</p>
+                      <p className="text-2xl font-bold">{workingDays}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                                Total {nonWorkingDays} non-working Days
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
 
               <Card>
                 <CardContent className="p-4">
@@ -479,11 +567,15 @@ export default function PartnerDetailsPage() {
                     <div>
                       <p className="text-sm font-medium">Rating</p>
                       <p className="text-2xl font-bold">{partner.ratings_average?.toFixed(1) || "0.0"}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Based on {partner.total_reviews || 0} reviews
+                            </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
+              {/* 
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
@@ -496,7 +588,7 @@ export default function PartnerDetailsPage() {
                     </div>
                   </div>
                 </CardContent>
-              </Card>
+              </Card> */}
             </div>
 
             {/* Detailed Sections */}
@@ -506,7 +598,7 @@ export default function PartnerDetailsPage() {
               </CardHeader>
               <CardContent>
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-6">
+                  <TabsList className="grid w-full grid-cols-7">
                     <TabsTrigger value="earnings" className="flex items-center gap-2">
                       <BarChart3 className="w-4 h-4" />
                       <span className="hidden sm:inline">Earnings</span>
@@ -523,40 +615,42 @@ export default function PartnerDetailsPage() {
                       <CreditCard className="w-4 h-4" />
                       <span className="hidden sm:inline">Credits</span>
                     </TabsTrigger>
-                    <TabsTrigger value="documents" className="flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      <span className="hidden sm:inline">Documents</span>
-                    </TabsTrigger>
+
                     <TabsTrigger value="chemicals" className="flex items-center gap-2">
                       <ShoppingCart className="w-4 h-4" />
                       <span className="hidden sm:inline">Chemicals</span>
                     </TabsTrigger>
-
+                    <TabsTrigger value="reviews" className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" />
+                      <span className="hidden sm:inline">Reviews</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="documents" className="flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      <span className="hidden sm:inline">Documents</span>
+                    </TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="earnings" className="mt-6">
                     <PartnerEarningsSection partnerId={partnerId} />
                   </TabsContent>
-
                   <TabsContent value="bookings" className="mt-6">
                     <PartnerBookingsSection partnerId={partnerId} />
                   </TabsContent>
                   <TabsContent value="loans" className="mt-6">
                     <PartnerLoansSection partnerId={partnerId} />
                   </TabsContent>
-
                   <TabsContent value="credits" className="mt-6">
                     <PartnerCreditsSection partnerId={partnerId} />
                   </TabsContent>
-
                   <TabsContent value="documents" className="mt-6">
                     <PartnerDocumentsSection partnerId={partnerId} />
                   </TabsContent>
-
                   <TabsContent value="chemicals" className="mt-6">
                     <PartnerChemicalsSection partnerId={partnerId} />
                   </TabsContent>
-
+                  <TabsContent value="reviews" className="mt-6">
+                    <PartnerReviewsSection partnerId={partnerId} />
+                  </TabsContent>
                 </Tabs>
               </CardContent>
             </Card>

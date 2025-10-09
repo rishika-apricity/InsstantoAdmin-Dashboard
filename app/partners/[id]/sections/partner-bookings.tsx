@@ -345,7 +345,7 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                                     <SelectItem value="confirmed">Confirmed</SelectItem>
                                     <SelectItem value="accepted">Accepted</SelectItem>
                                     <SelectItem value="in-progress">In Progress</SelectItem>
-                                    <SelectItem value="completed">Completed</SelectItem>
+                                    <SelectItem value="service_completed">Completed</SelectItem>
                                     <SelectItem value="cancelled">Cancelled</SelectItem>
                                 </SelectContent>
                             </Select>

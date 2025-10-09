@@ -1,127 +1,68 @@
-import type { Customer, CustomerBooking } from "@/types/customer"
+"use client";
 
-export const mockCustomers: Customer[] = [
-  {
-    id: "1",
-    name: "Priya Sharma",
-    email: "priya.sharma@email.com",
-    phone: "+91 98765 43210",
-    city: "Mumbai",
-    signupDate: "2024-01-15",
-    lastBookingDate: "2024-02-20",
-    totalBookings: 12,
-    totalSpent: 18500,
-    lifetimeValue: 22000,
-    averageRating: 4.8,
-    status: "active",
-    tags: ["VIP", "Frequent"],
-    notes: "Prefers morning slots, excellent customer",
-  },
-  {
-    id: "2",
-    name: "Rahul Gupta",
-    email: "rahul.gupta@email.com",
-    phone: "+91 87654 32109",
-    city: "Delhi",
-    signupDate: "2024-02-01",
-    lastBookingDate: "2024-02-18",
-    totalBookings: 8,
-    totalSpent: 12300,
-    lifetimeValue: 15000,
-    averageRating: 4.5,
-    status: "active",
-    tags: ["Regular"],
-    notes: "Usually books AC repair services",
-  },
-  {
-    id: "3",
-    name: "Anjali Singh",
-    email: "anjali.singh@email.com",
-    phone: "+91 76543 21098",
-    city: "Bangalore",
-    signupDate: "2023-11-20",
-    lastBookingDate: "2024-02-15",
-    totalBookings: 15,
-    totalSpent: 25600,
-    lifetimeValue: 30000,
-    averageRating: 4.9,
-    status: "active",
-    tags: ["VIP", "Loyal"],
-    notes: "Long-term customer, always satisfied",
-  },
-  {
-    id: "4",
-    name: "Vikram Patel",
-    email: "vikram.patel@email.com",
-    phone: "+91 65432 10987",
-    city: "Pune",
-    signupDate: "2024-02-10",
-    lastBookingDate: null,
-    totalBookings: 1,
-    totalSpent: 950,
-    lifetimeValue: 1200,
-    averageRating: 4.0,
-    status: "active",
-    tags: ["New"],
-    notes: "New customer, first booking completed",
-  },
-  {
-    id: "5",
-    name: "Meera Reddy",
-    email: "meera.reddy@email.com",
-    phone: "+91 54321 09876",
-    city: "Hyderabad",
-    signupDate: "2023-08-15",
-    lastBookingDate: "2023-12-20",
-    totalBookings: 6,
-    totalSpent: 8900,
-    lifetimeValue: 10000,
-    averageRating: 3.8,
-    status: "inactive",
-    tags: ["Inactive"],
-    notes: "Has not booked in 2 months",
-  },
-]
+import { collection, getDocs, query, where, Timestamp, DocumentData } from "firebase/firestore";
+import { getFirestoreDb } from "@/lib/firebase";
 
-export const mockCustomerBookings: Record<string, CustomerBooking[]> = {
-  "1": [
-    {
-      id: "b1",
-      serviceId: "s1",
-      serviceName: "Home Cleaning",
-      partnerId: "p1",
-      partnerName: "CleanPro Services",
-      date: "2024-02-20",
-      amount: 1200,
-      status: "completed",
-      rating: 5,
-      review: "Excellent service, very thorough cleaning",
-    },
-    {
-      id: "b2",
-      serviceId: "s2",
-      serviceName: "Pest Control",
-      partnerId: "p2",
-      partnerName: "PestAway Solutions",
-      date: "2024-02-15",
-      amount: 1800,
-      status: "completed",
-      rating: 4,
-      review: "Good service, effective treatment",
-    },
-  ],
-  "2": [
-    {
-      id: "b3",
-      serviceId: "s3",
-      serviceName: "AC Repair",
-      partnerId: "p3",
-      partnerName: "CoolTech Repairs",
-      date: "2024-02-18",
-      amount: 2500,
-      status: "completed",
-      rating: 5,
-      review: "Quick and professional service",
-    },
-  ],
+export interface CustomerStats {
+  totalCustomers: number;
+  customersWithOneBooking: number;
+  customersWithMultipleBookings: number;
+  newCustomersToday: number;
+}
+
+export async function fetchCustomerStats(): Promise<CustomerStats> {
+  const db = getFirestoreDb();
+
+  // 1. Fetch all customers
+  const customerSnapshot = await getDocs(
+    query(collection(db, "customer"), where("userType.customer", "==", true))
+  );
+  const totalCustomers = customerSnapshot.size;
+
+  // 2. Fetch bookings where status = "service_completed"
+  const bookingSnapshot = await getDocs(
+    query(collection(db, "bookings"), where("status", "==", "Service_Completed"))
+  );
+
+  const bookingCount: Record<string, number> = {};
+
+  bookingSnapshot.forEach((docSnap) => {
+    const data = docSnap.data() as DocumentData;
+    const customerRef = data.customer_id;
+    if (customerRef && customerRef.id) {
+      bookingCount[customerRef.id] = (bookingCount[customerRef.id] || 0) + 1;
+    }
+  });
+
+  // 3. Calculate based only on completed bookings
+  let customersWithOneBooking = 0;
+  let customersWithMultipleBookings = 0;
+
+  Object.values(bookingCount).forEach((count) => {
+    if (count === 1) customersWithOneBooking++;
+    else if (count > 1) customersWithMultipleBookings++;
+  });
+
+  // 4. Find new customers created today
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const todaySnapshot = await getDocs(
+    query(
+      collection(db, "customer"),
+      where("created_time", ">=", Timestamp.fromDate(todayStart)),
+      where("created_time", "<=", Timestamp.fromDate(todayEnd))
+    )
+  );
+
+  const newCustomersToday = todaySnapshot.size;
+
+  return {
+    totalCustomers,
+    customersWithOneBooking,
+    customersWithMultipleBookings,
+    newCustomersToday,
+  };
 }

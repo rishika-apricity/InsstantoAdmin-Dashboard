@@ -228,13 +228,19 @@ export default function CustomerDetailsPage() {
             collection(db, "partner_overall_credits"),
             where("service_partner_id", "==", customerRef)
           )
-        const snapshot = await getDocs(walletQuery)
-        if (!snapshot.empty) {
-          const [walletDoc] = snapshot.docs
-          if (walletDoc) {
-            setWalletInfo({ id: walletDoc.id, ...(walletDoc.data() as any) } as WalletDoc)
+          const snapshot = await getDocs(walletQuery)
+          
+          if (!snapshot.empty) {
+            const walletDoc = snapshot.docs[0]
+            setWalletInfo({ id: walletDoc.id, ...walletDoc.data() } as WalletDoc)
+          } else {
+            // Try direct document lookup by customer ID
+            const directWalletDoc = await getDoc(doc(db, "partner_overall_credits", customer.id))
+            if (directWalletDoc.exists()) {
+              setWalletInfo({ id: directWalletDoc.id, ...directWalletDoc.data() } as WalletDoc)
+            }
           }
-        }} catch (walletErr) {
+        } catch (walletErr) {
           console.error("Error fetching wallet from partner_overall_credits:", walletErr)
         }
         
@@ -401,9 +407,9 @@ export default function CustomerDetailsPage() {
 
   // Calculate statistics
   const totalBookings = bookings.length
-  const completedBookings = bookings.filter(b => b.status?.toLowerCase() === 'service_completed').length
+  const completedBookings = bookings.filter(b => b.status?.toLowerCase() === 'completed').length
   const totalSpent = bookings
-    .filter(b => b.status?.toLowerCase() === 'service_completed')
+    .filter(b => b.status?.toLowerCase() === 'completed')
     .reduce((sum, b) => sum + (b.amount_paid || 0), 0)
 
   if (loading) {
@@ -604,6 +610,56 @@ export default function CustomerDetailsPage() {
               </Card>
             </div>
 
+            {/* Wallet Information Card
+            {walletInfo && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Wallet className="w-5 h-5" />
+                    Wallet Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="flex items-center justify-between p-4 rounded-lg border">
+                      <div>
+                        <p className="text-sm font-medium">Current Balance</p>
+                        <p className="text-2xl font-bold">{formatCurrency(walletInfo.credit_balance || 0)}</p>
+                      </div>
+                      <div className="p-3 bg-green-100 rounded-lg">
+                        <CreditCard className="w-6 h-6 text-green-600" />
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-4 rounded-lg border">
+                      <div>
+                        <p className="text-sm font-medium">Expiry Date</p>
+                        <p className="text-sm font-bold">{formatDate(walletInfo.expiryDate) || "No expiry"}</p>
+                      </div>
+                      <div className="p-3 bg-blue-100 rounded-lg">
+                        <Calendar className="w-6 h-6 text-blue-600" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border">
+                      <div>
+                        <p className="text-sm font-medium">Bonus Status</p>
+                        <Badge 
+                          variant={walletInfo.WalletBonusStatus === "Active" ? "default" : "secondary"} 
+                          className="text-xs mt-1"
+                        >
+                          {walletInfo.WalletBonusStatus || "N/A"}
+                        </Badge>
+                      </div>
+                      <div className="p-3 bg-purple-100 rounded-lg">
+                        <Star className="w-6 h-6 text-purple-600" />
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )} */}
+
             {/* Bookings History */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -734,10 +790,10 @@ export default function CustomerDetailsPage() {
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          onClick={goNext} 
+                          onClick={goNext}
                           disabled={!hasNextPage || bookingsLoading}
                         >
-                          Next 
+                          Next
                           <ChevronRight className="h-4 w-4 ml-1" />
                         </Button>
                       </div>

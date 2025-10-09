@@ -46,13 +46,13 @@ export function AdminHeader({ title = "Dashboard" }: AdminHeaderProps) {
 
       <div className="flex items-center gap-4">
         {/* Global Search */}
-        <div className="relative hidden md:block">
+        {/* <div className="relative hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input type="search" placeholder="Search bookings, customers, partners..." className="w-[300px] pl-8" />
-        </div>
+        </div> */}
 
         {/* Date Range Picker */}
-        <Popover>
+        {/* <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" className="gap-2 bg-transparent">
               <Calendar className="h-4 w-4" />
@@ -79,10 +79,10 @@ export function AdminHeader({ title = "Dashboard" }: AdminHeaderProps) {
               numberOfMonths={2}
             />
           </PopoverContent>
-        </Popover>
+        </Popover> */}
 
         {/* Quick Filters */}
-        <DropdownMenu>
+        {/* <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="icon">
               <Filter className="h-4 w-4" />
@@ -101,10 +101,10 @@ export function AdminHeader({ title = "Dashboard" }: AdminHeaderProps) {
             <DropdownMenuItem>Pest Control</DropdownMenuItem>
             <DropdownMenuItem>Appliance Repair</DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu> */}
 
         {/* Notifications */}
-        <DropdownMenu>
+        {/* <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="icon" className="relative bg-transparent">
               <Bell className="h-4 w-4" />
@@ -127,7 +127,7 @@ export function AdminHeader({ title = "Dashboard" }: AdminHeaderProps) {
               <div className="text-sm text-muted-foreground">Cleaning supplies running low in Delhi warehouse</div>
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu> */}
 
         {/* User Menu */}
         <DropdownMenu>
@@ -146,10 +146,10 @@ export function AdminHeader({ title = "Dashboard" }: AdminHeaderProps) {
                 </Badge>
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
+            {/* <DropdownMenuSeparator />
             <DropdownMenuItem>Profile</DropdownMenuItem>
             <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuSeparator />
+            <DropdownMenuSeparator /> */}
             <DropdownMenuItem onClick={handleLogout} className="text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
               Logout

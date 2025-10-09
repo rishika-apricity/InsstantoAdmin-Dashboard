@@ -20,6 +20,8 @@ export function PerformanceMetrics() {
   const [peakHours, setPeakHours] = useState<TimeSlotWithPercentage[]>([])
   const [repeatCustomerCount, setRepeatCustomerCount] = useState<number>(0)
   const [newCustomerCount, setNewCustomerCount] = useState<number>(0)
+  const [averageRating, setaverageRating] = useState<number>(0)
+  const [totalRatings, settotalRatings] = useState<number>(0)
 
   useEffect(() => {
     const loadServices = async () => {
@@ -46,6 +48,8 @@ export function PerformanceMetrics() {
         const data = await fetchNewVsRepeatCustomers() // fetch counts
         setRepeatCustomerCount(data.repeatCustomerCount)
         setNewCustomerCount(data.newCustomerCount)
+        setaverageRating(data.averageRating)
+        settotalRatings(data.totalRatings)
       } catch (error) {
         console.error("Error fetching customer counts:", error)
       }
@@ -151,10 +155,10 @@ export function PerformanceMetrics() {
               <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                 <div>
                   <p className="text-sm font-medium">{metric.label}</p>
-                  <p className="text-xs text-muted-foreground">{metric.count}</p>
+                  <p className="text-xs text-muted-foreground">{totalRatings}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-primary">{metric.value}</p>
+                  <p className="text-lg font-bold text-primary">{averageRating}/5</p>
                 </div>
               </div>
             ))}

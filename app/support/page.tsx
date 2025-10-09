@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,14 +9,61 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, MessageSquare, AlertTriangle, Clock, CheckCircle, Star } from "lucide-react"
-import { mockSupportTickets, mockReviews } from "@/lib/queries/support"
+import { Search, MessageSquare, AlertTriangle, Clock, CheckCircle, Loader2, Star } from "lucide-react"
+
+import { getSupportTickets, getPartnerReviews } from "@/lib/queries/support"
+import type { SupportTicket } from "@/types/support"
+
+// partnerIds used everywhere
+const partnerIds = [
+  "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
+  "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
+  "VxxapfO7l8YM5f6xmFqpThc17eD3"
+]
 
 export default function SupportPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [tickets, setTickets] = useState<SupportTicket[]>([])
+  const [reviews, setReviews] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const filteredTickets = mockSupportTickets.filter((ticket) => {
+  // pagination for tickets
+  const [currentPageTickets, setCurrentPageTickets] = useState(1)
+  const ticketsPerPage = 8
+
+  // pagination for reviews
+  const [currentPageReviews, setCurrentPageReviews] = useState(1)
+  const reviewsPerPage = 8
+
+  useEffect(() => {
+    loadTickets()
+    loadReviews()
+  }, [])
+
+  const loadTickets = async () => {
+    setLoading(true)
+    try {
+      const data = await getSupportTickets()
+      setTickets(data)
+    } catch (error) {
+      console.error("Error loading tickets:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadReviews = async () => {
+    try {
+      const data = await getPartnerReviews(partnerIds)
+      setReviews(data)
+    } catch (error) {
+      console.error("Error loading reviews:", error)
+    }
+  }
+
+  // Filter tickets
+  const filteredTickets = tickets.filter((ticket) => {
     const matchesSearch =
       ticket.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ticket.customerName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -24,11 +71,25 @@ export default function SupportPage() {
     return matchesSearch && matchesStatus
   })
 
+  // Paginate tickets
+  const totalPagesTickets = Math.ceil(filteredTickets.length / ticketsPerPage)
+  const paginatedTickets = filteredTickets.slice(
+    (currentPageTickets - 1) * ticketsPerPage,
+    currentPageTickets * ticketsPerPage
+  )
+
+  // Paginate reviews
+  const totalPagesReviews = Math.ceil(reviews.length / reviewsPerPage)
+  const paginatedReviews = reviews.slice(
+    (currentPageReviews - 1) * reviewsPerPage,
+    currentPageReviews * reviewsPerPage
+  )
+
   const ticketStats = {
-    total: mockSupportTickets.length,
-    open: mockSupportTickets.filter((t) => t.status === "open").length,
-    inProgress: mockSupportTickets.filter((t) => t.status === "in_progress").length,
-    resolved: mockSupportTickets.filter((t) => t.status === "resolved").length,
+    total: tickets.length,
+    open: tickets.filter((t) => t.status === "open").length,
+    inProgress: tickets.filter((t) => t.status === "in_progress").length,
+    resolved: tickets.filter((t) => t.status === "resolved").length,
   }
 
   const getPriorityColor = (priority: string) => {
@@ -61,6 +122,20 @@ export default function SupportPage() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="flex h-screen bg-gray-50">
+        <AdminSidebar />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+            <p className="text-gray-600">Loading support tickets...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen bg-gray-50">
       <AdminSidebar />
@@ -70,8 +145,12 @@ export default function SupportPage() {
             <h1 className="text-3xl font-bold text-gray-900">Complaints & Support</h1>
             <p className="text-gray-600">Manage customer complaints, queries, and reviews</p>
           </div>
+          <Button onClick={loadTickets} variant="outline">
+            Refresh
+          </Button>
         </div>
 
+        {/* Stats cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200">
             <CardHeader className="pb-3">
@@ -124,6 +203,7 @@ export default function SupportPage() {
             <TabsTrigger value="reviews">Reviews Management</TabsTrigger>
           </TabsList>
 
+          {/* Tickets Tab */}
           <TabsContent value="tickets" className="space-y-4">
             <div className="flex items-center space-x-4">
               <div className="relative flex-1">
@@ -131,11 +211,20 @@ export default function SupportPage() {
                 <Input
                   placeholder="Search tickets..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setCurrentPageTickets(1)
+                  }}
                   className="pl-10"
                 />
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select
+                value={statusFilter}
+                onValueChange={(val) => {
+                  setStatusFilter(val)
+                  setCurrentPageTickets(1)
+                }}
+              >
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
@@ -164,84 +253,145 @@ export default function SupportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTickets.map((ticket) => (
-                    <TableRow key={ticket.id}>
-                      <TableCell className="font-mono">#{ticket.id}</TableCell>
-                      <TableCell className="font-medium">{ticket.customerName}</TableCell>
-                      <TableCell>
-                        <div className="max-w-xs truncate">{ticket.subject}</div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {ticket.type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getPriorityColor(ticket.priority)}>{ticket.priority}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(ticket.status)}>{ticket.status.replace("_", " ")}</Badge>
-                      </TableCell>
-                      <TableCell>{new Date(ticket.createdAt).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm">
-                          View
-                        </Button>
+                  {paginatedTickets.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                        No tickets found
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    paginatedTickets.map((ticket) => (
+                      <TableRow key={ticket.id}>
+                        <TableCell className="font-mono">#{ticket.id.substring(0, 8)}</TableCell>
+                        <TableCell className="font-medium">{ticket.customerName}</TableCell>
+                        <TableCell>
+                          <div className="max-w-xs truncate">{ticket.subject}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="capitalize">
+                            {ticket.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getPriorityColor(ticket.priority)}>{ticket.priority}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getStatusColor(ticket.status)}>{ticket.status.replace("_", " ")}</Badge>
+                        </TableCell>
+                        <TableCell>{new Date(ticket.createdAt).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="sm">
+                            View
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
+
+              {/* Ticket Pagination */}
+              {totalPagesTickets > 1 && (
+                <div className="flex justify-between items-center px-4 py-3 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPageTickets === 1}
+                    onClick={() => setCurrentPageTickets((p) => p - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm text-gray-600">
+                    Page {currentPageTickets} of {totalPagesTickets}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPageTickets === totalPagesTickets}
+                    onClick={() => setCurrentPageTickets((p) => p + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
             </Card>
           </TabsContent>
 
+          {/* Reviews Tab */}
           <TabsContent value="reviews" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>Customer Reviews</CardTitle>
-                <CardDescription>Manage and moderate customer reviews</CardDescription>
+                <CardDescription>Manage and moderate reviews for selected partners</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Date</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Service</TableHead>
                       <TableHead>Partner</TableHead>
                       <TableHead>Rating</TableHead>
-                      <TableHead>Comment</TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead>Feedback</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mockReviews.map((review) => (
-                      <TableRow key={review.id}>
-                        <TableCell className="font-medium">{review.customerName}</TableCell>
-                        <TableCell>{review.serviceName}</TableCell>
-                        <TableCell>{review.partnerName}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center">
-                            <Star className="w-4 h-4 text-yellow-500 mr-1" />
-                            {review.rating}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="max-w-xs truncate">{review.comment}</div>
-                        </TableCell>
-                        <TableCell>{new Date(review.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm">
-                            Moderate
-                          </Button>
+                    {paginatedReviews.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                          No reviews found
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      paginatedReviews.map((review) => (
+                        <TableRow key={review.id}>
+                          <TableCell>{new Date(review.createdAt).toLocaleDateString()}</TableCell>
+                          <TableCell>{review.customerName}</TableCell>
+                          <TableCell>{review.partnerName}</TableCell>
+                          <TableCell>
+                            <Badge className="bg-yellow-100 text-yellow-800">
+                              {review.partnerRating} ★
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{review.feedback || "—"}</TableCell>
+                          <TableCell>
+                            <Button variant="outline" size="sm">Moderate</Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
+
+                {/* Pagination */}
+                {totalPagesReviews > 1 && (
+                  <div className="flex justify-between items-center px-4 py-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPageReviews === 1}
+                      onClick={() => setCurrentPageReviews((p) => p - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Page {currentPageReviews} of {totalPagesReviews}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPageReviews === totalPagesReviews}
+                      onClick={() => setCurrentPageReviews((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
+
         </Tabs>
       </div>
     </div>
