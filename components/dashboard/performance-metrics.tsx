@@ -1,30 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import {
-  Clock,
-  Star,
-  TrendingUp,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
-import {
-  fetchTopCategories,
-  type TopCategory,
-} from "@/lib/queries/top-services";
-import {
-  fetchMostBookedSlots,
-  type TimeSlot,
-} from "@/lib/queries/most-booked-slots";
+import { Clock, Star, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { fetchTopCategories, type TopCategory } from "@/lib/queries/top-services";
+import { fetchMostBookedSlots, type TimeSlot } from "@/lib/queries/most-booked-slots";
 import { fetchNewVsRepeatCustomers } from "@/lib/queries/customer-insights";
 
 type TimeSlotWithPercentage = TimeSlot & { percentage: number };
@@ -54,50 +36,38 @@ export function PerformanceMetrics({
   const [totalRatings, setTotalRatings] = useState<number>(0);
   const [categoriesPage, setCategoriesPage] = useState(1);
   const [peakHoursPage, setPeakHoursPage] = useState(1);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // ✅ Prevent empty or invalid date fetches
-    if (!fromDate || !toDate) return;
+    const loadCategories = async () => {
+      const categories = await fetchTopCategories(fromDate, toDate);
+      setTopCategories(categories);
+    };
 
-    const validFrom = new Date(fromDate);
-    const validTo = new Date(toDate);
+    const loadSlots = async () => {
+      const slots = await fetchMostBookedSlots(fromDate, toDate);
+      const totalBookings = slots.reduce((sum, s) => sum + s.bookings, 0) || 1;
+      const slotsWithPercent: TimeSlotWithPercentage[] = slots.map((s) => ({
+        ...s,
+        percentage: Math.round((s.bookings / totalBookings) * 100),
+      }));
+      setPeakHours(slotsWithPercent);
+    };
 
-    if (isNaN(validFrom.getTime()) || isNaN(validTo.getTime())) return;
-
-    const loadAll = async () => {
+    const loadCustomerCounts = async () => {
       try {
-        setLoading(true);
-
-        console.log("📅 Fetching data for range:", { fromDate, toDate });
-
-        // Load top categories
-        const categories = await fetchTopCategories(fromDate, toDate);
-        setTopCategories(categories);
-
-        // Load slots and calculate %
-        const slots = await fetchMostBookedSlots(fromDate, toDate);
-        const totalBookings = slots.reduce((sum, s) => sum + s.bookings, 0) || 1;
-        const slotsWithPercent: TimeSlotWithPercentage[] = slots.map((s) => ({
-          ...s,
-          percentage: Math.round((s.bookings / totalBookings) * 100),
-        }));
-        setPeakHours(slotsWithPercent);
-
-        // Load customer stats
         const data = await fetchNewVsRepeatCustomers(fromDate, toDate);
         setRepeatCustomerCount(data.repeatCustomerCount);
         setNewCustomerCount(data.newCustomerCount);
         setAverageRating(data.averageRating);
         setTotalRatings(data.totalRatings);
       } catch (error) {
-        console.error("Error loading performance data:", error);
-      } finally {
-        setLoading(false);
+        console.error("Error fetching customer counts:", error);
       }
     };
 
-    loadAll();
+    loadCategories();
+    loadSlots();
+    loadCustomerCounts();
   }, [fromDate, toDate]);
 
   const totalCategoriesPages = Math.ceil(topCategories.length / ITEMS_PER_PAGE);
@@ -112,13 +82,6 @@ export function PerformanceMetrics({
     peakHoursPage * ITEMS_PER_PAGE
   );
 
-  if (loading)
-    return (
-      <div className="text-center text-muted-foreground py-10">
-        Loading performance metrics...
-      </div>
-    );
-
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {/* Peak Hours */}
@@ -128,7 +91,7 @@ export function PerformanceMetrics({
             <Clock className="h-5 w-5 text-blue-500" /> Peak Hours
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Most active booking times in this period
+            Most active booking times today
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -151,15 +114,13 @@ export function PerformanceMetrics({
                     </div>
                   </div>
                 ))}
-
+                {/* Pagination Controls */}
                 {totalPeakHoursPages > 1 && (
                   <div className="flex items-center justify-between pt-2 border-t">
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() =>
-                        setPeakHoursPage((p) => Math.max(1, p - 1))
-                      }
+                      onClick={() => setPeakHoursPage((p) => Math.max(1, p - 1))}
                       disabled={peakHoursPage === 1}
                     >
                       <ChevronLeft className="h-4 w-4" />
@@ -170,11 +131,7 @@ export function PerformanceMetrics({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() =>
-                        setPeakHoursPage((p) =>
-                          Math.min(totalPeakHoursPages, p + 1)
-                        )
-                      }
+                      onClick={() => setPeakHoursPage((p) => Math.min(totalPeakHoursPages, p + 1))}
                       disabled={peakHoursPage === totalPeakHoursPages}
                     >
                       <ChevronRight className="h-4 w-4" />
@@ -193,9 +150,7 @@ export function PerformanceMetrics({
           <CardTitle className="flex items-center gap-2 text-muted-foreground font-bold">
             <Star className="h-5 w-5 text-purple-500" /> Top Categories
           </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            By booking volume
-          </CardDescription>
+          <CardDescription className="text-muted-foreground">By booking volume</CardDescription>
         </CardHeader>
         <CardContent>
           {topCategories.length === 0 ? (
@@ -217,15 +172,13 @@ export function PerformanceMetrics({
                   </div>
                 </div>
               ))}
-
+              {/* Pagination Controls */}
               {totalCategoriesPages > 1 && (
                 <div className="flex items-center justify-between pt-2 border-t">
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() =>
-                      setCategoriesPage((p) => Math.max(1, p - 1))
-                    }
+                    onClick={() => setCategoriesPage((p) => Math.max(1, p - 1))}
                     disabled={categoriesPage === 1}
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -236,11 +189,7 @@ export function PerformanceMetrics({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() =>
-                      setCategoriesPage((p) =>
-                        Math.min(totalCategoriesPages, p + 1)
-                      )
-                    }
+                    onClick={() => setCategoriesPage((p) => Math.min(totalCategoriesPages, p + 1))}
                     disabled={categoriesPage === totalCategoriesPages}
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -266,19 +215,13 @@ export function PerformanceMetrics({
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 rounded-lg bg-white/70">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Repeat Customers
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {repeatCustomerCount}
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">Repeat Customers</p>
+                <p className="text-xs text-muted-foreground">{repeatCustomerCount}</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold text-green-600">
                   {Math.round(
-                    (repeatCustomerCount /
-                      (repeatCustomerCount + newCustomerCount || 1)) *
-                      100
+                    (repeatCustomerCount / (repeatCustomerCount + newCustomerCount || 1)) * 100
                   )}{" "}
                   %
                 </p>
@@ -286,41 +229,26 @@ export function PerformanceMetrics({
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-white/70">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  New Customers
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {newCustomerCount}
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">New Customers</p>
+                <p className="text-xs text-muted-foreground">{newCustomerCount}</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold text-green-600">
                   {Math.round(
-                    (newCustomerCount /
-                      (repeatCustomerCount + newCustomerCount || 1)) *
-                      100
+                    (newCustomerCount / (repeatCustomerCount + newCustomerCount || 1)) * 100
                   )}{" "}
                   %
                 </p>
               </div>
             </div>
             {customerMetrics.map((metric, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between p-3 rounded-lg bg-white/70"
-              >
+              <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-white/70">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    {metric.label}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {totalRatings}
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">{metric.label}</p>
+                  <p className="text-xs text-muted-foreground">{totalRatings}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-green-600">
-                    {averageRating}/5
-                  </p>
+                  <p className="text-lg font-bold text-green-600">{averageRating}/5</p>
                 </div>
               </div>
             ))}
