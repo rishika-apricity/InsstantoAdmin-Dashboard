@@ -279,10 +279,8 @@ export default function SupportPage() {
                           <Badge className={getStatusColor(ticket.status)}>{ticket.status.replace("_", " ")}</Badge>
                         </TableCell>
                         <TableCell>{new Date(ticket.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm">
-                            View
-                          </Button>
+                          <TableCell>
+                          <div className="max-w-xs truncate">{ticket.note}</div>
                         </TableCell>
                       </TableRow>
                     ))

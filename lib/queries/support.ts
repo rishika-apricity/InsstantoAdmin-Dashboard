@@ -91,6 +91,7 @@ export async function getSupportTickets(): Promise<SupportTicket[]> {
         ),
         status: mapComplaintStatus(data.complaint_status),
         subject: data.customer_complaint || "No subject",
+        note: data.notefrom_Insstanto || "-",
         description: extractDescription(
           data.complaint_history,
           data.customer_complaint
@@ -163,6 +164,7 @@ export async function getTicketById(
       ),
       status: mapComplaintStatus(data.complaint_status),
       subject: data.customer_complaint || "No subject",
+      note: data.notefrom_Insstanto || "-",
       description: extractDescription(
         data.complaint_history,
         data.customer_complaint

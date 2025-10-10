@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { fetchBookingStats } from "@/lib/queries/dashboard";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -8,7 +9,16 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { ChartPlaceholder } from "@/components/dashboard/chart-placeholder";
 import { GraphPlaceholder } from "@/components/dashboard/graph-placeholder";
 import { PerformanceMetrics } from "@/components/dashboard/performance-metrics";
-import { Calendar, Users, DollarSign, TrendingUp, UserPlus, Star, Activity, BarChart3 } from "lucide-react";
+import {
+  Calendar,
+  Users,
+  DollarSign,
+  TrendingUp,
+  UserPlus,
+  Star,
+  Activity,
+  BarChart3,
+} from "lucide-react";
 
 function formatDateInput(d: Date) {
   return d.toLocaleDateString("en-CA"); // ✅ Formats as YYYY-MM-DD
@@ -21,23 +31,21 @@ export default function DashboardPage() {
 
   // ✅ Default range: From April 1, 2025 to today's date
   const today = new Date();
-  const defaultStart = new Date(2025, 3, 1); // Month is 0-indexed → 3 = April
+  const defaultStart = new Date(2025, 3, 1);
   const defaultEnd = today;
-  
+
   const [fromDate, setFromDate] = useState<string>(formatDateInput(defaultStart));
   const [toDate, setToDate] = useState<string>(formatDateInput(defaultEnd));
 
-  // ✅ Reset button now resets to April 1, 2025 → today
   const clearFilter = () => {
     setFromDate(formatDateInput(defaultStart));
     setToDate(formatDateInput(defaultEnd));
   };
 
-  // ---- Fetch Data (with date range filter) ----
   const fetchData = async () => {
     try {
       setLoading(true);
-      const data = await fetchBookingStats(fromDate, toDate); // Pass selected date range
+      const data = await fetchBookingStats(fromDate, toDate);
       setKpiData([
         {
           title: "Completed Bookings",
@@ -106,7 +114,6 @@ export default function DashboardPage() {
     fetchData();
   }, [fromDate, toDate]);
 
-  // ---- Render Page ----
   return (
     <ProtectedRoute>
       <div className="flex min-h-screen w-full flex-col bg-muted/40">
@@ -117,29 +124,35 @@ export default function DashboardPage() {
             {/* ---- Date Range Filter ---- */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
-                <p className="text-muted-foreground text-lg font-semibold"> Track key business metrics and performance here </p>
+                <p className="text-muted-foreground text-lg font-semibold">
+                  Track key business metrics and performance here
+                </p>
               </div>
               <div className="flex gap-2 items-center">
-                <input 
-                  type="date" 
-                  value={fromDate} 
-                  onChange={(e) => setFromDate(e.target.value)} 
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
                   className="border rounded px-2 py-1"
-                  max={formatDateInput(today)}  // Disable future dates
+                  max={formatDateInput(today)}
                 />
                 <span>to</span>
-                <input 
-                  type="date" 
-                  value={toDate} 
-                  onChange={(e) => setToDate(e.target.value)} 
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
                   className="border rounded px-2 py-1"
-                  max={formatDateInput(today)}  // Disable future dates
+                  max={formatDateInput(today)}
                 />
-                <button onClick={clearFilter} className="bg-gray-200 hover:bg-gray-300 text-sm px-3 py-1 rounded">
+                <button
+                  onClick={clearFilter}
+                  className="bg-gray-200 hover:bg-gray-300 text-sm px-3 py-1 rounded"
+                >
                   Show Overall Performance
                 </button>
               </div>
             </div>
+
             {/* ---- KPI Cards ---- */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {loading ? (
@@ -150,13 +163,27 @@ export default function DashboardPage() {
                 kpiData.map((kpi, index) => <KpiCard key={index} {...kpi} />)
               )}
             </div>
+
             {/* ---- Charts ---- */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <ChartPlaceholder title="Monthly Bookings Trend" description="Booking volume over the selected range" icon={BarChart3} iconColor="text-primary" className="col-span-2" />
-              <GraphPlaceholder title="Revenue Distribution" description="Revenue by service category" icon={Activity} iconColor="text-secondary" className="col-span-2" />
+              <ChartPlaceholder
+                title="Monthly Bookings Trend"
+                description="Booking volume over the selected range"
+                icon={BarChart3}
+                iconColor="text-primary"
+                className="col-span-2"
+              />
+              <GraphPlaceholder
+                title="Revenue Distribution"
+                description="Revenue by service category"
+                icon={Activity}
+                iconColor="text-secondary"
+                className="col-span-2"
+              />
             </div>
+
             {/* ---- Performance Metrics ---- */}
-            <PerformanceMetrics fromDate={""} toDate={""} />
+            <PerformanceMetrics fromDate={fromDate} toDate={toDate} />
           </main>
         </div>
       </div>

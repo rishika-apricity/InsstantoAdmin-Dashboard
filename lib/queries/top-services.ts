@@ -1,5 +1,14 @@
 import { getFirestoreDb } from "@/lib/firebase";
-import { collection, getDocs, getDoc, doc, DocumentReference, DocumentData, query, where } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  getDoc,
+  doc,
+  DocumentReference,
+  DocumentData,
+  query,
+  where,
+} from "firebase/firestore";
 
 export type TopService = {
   name: string;
@@ -13,7 +22,7 @@ export type TopCategory = {
   topService: string;
 };
 
-// Define Firestore document types
+// Firestore document types
 type SubCategoryDoc = {
   service_name: string;
   service_subCategory?: DocumentReference<DocumentData>;
@@ -23,13 +32,32 @@ type CategoryDoc = {
   name: string;
 };
 
-export async function fetchTopServices(): Promise<TopService[]> {
+/* -------------------------------------------------------------------------- */
+/*                        FETCH TOP SERVICES (DATE RANGE)                     */
+/* -------------------------------------------------------------------------- */
+export async function fetchTopServices(
+  fromDate?: string,
+  toDate?: string
+): Promise<TopService[]> {
   try {
     const db = getFirestoreDb();
-    const q = query(
+
+    // Base query for completed bookings
+    let q = query(
       collection(db, "bookings"),
       where("status", "==", "Service_Completed")
     );
+
+    // ✅ Apply date filter if provided
+    if (fromDate && toDate) {
+      q = query(
+        collection(db, "bookings"),
+        where("status", "==", "Service_Completed"),
+        where("createdAt", ">=", new Date(fromDate)),
+        where("createdAt", "<=", new Date(toDate))
+      );
+    }
+
     const snapshot = await getDocs(q);
 
     const allowedProviders = [
@@ -41,19 +69,22 @@ export async function fetchTopServices(): Promise<TopService[]> {
     const bookingsBySubCat: Record<string, number> = {};
     const subCategoryRefs: Set<string> = new Set();
 
-    for (const doc of snapshot.docs) {
-      const booking = doc.data();
+    // Count bookings per subcategory (filtered by allowed providers)
+    for (const docSnap of snapshot.docs) {
+      const booking = docSnap.data();
       const providerId = booking.provider_id?.id || booking.provider_id;
       if (!allowedProviders.includes(providerId)) continue;
 
-      const subCatRef: DocumentReference<DocumentData> | undefined = booking.subCategoryCart_id;
+      const subCatRef: DocumentReference<DocumentData> | undefined =
+        booking.subCategoryCart_id;
       if (!subCatRef) continue;
 
       subCategoryRefs.add(subCatRef.path);
-      bookingsBySubCat[subCatRef.path] = (bookingsBySubCat[subCatRef.path] || 0) + 1;
+      bookingsBySubCat[subCatRef.path] =
+        (bookingsBySubCat[subCatRef.path] || 0) + 1;
     }
 
-    // Fetch all subcategories in parallel
+    // Fetch subcategory and category names
     const subCatDocs = await Promise.all(
       Array.from(subCategoryRefs).map(async (path) => {
         const subCatSnap = await getDoc(doc(db, path));
@@ -72,6 +103,7 @@ export async function fetchTopServices(): Promise<TopService[]> {
 
     const serviceData: Record<string, { count: number; category?: string }> = {};
 
+    // Aggregate booking counts per service
     for (const { path, data, category } of subCatDocs) {
       if (!data) continue;
       const serviceName = data.service_name;
@@ -85,6 +117,7 @@ export async function fetchTopServices(): Promise<TopService[]> {
       }
     }
 
+    // Sort and return structured data
     return Object.entries(serviceData)
       .sort((a, b) => b[1].count - a[1].count)
       .map(([name, data]) => ({
@@ -98,10 +131,18 @@ export async function fetchTopServices(): Promise<TopService[]> {
   }
 }
 
-export async function fetchTopCategories(fromDate: string, toDate: string): Promise<TopCategory[]> {
+/* -------------------------------------------------------------------------- */
+/*                       FETCH TOP CATEGORIES (DATE RANGE)                    */
+/* -------------------------------------------------------------------------- */
+export async function fetchTopCategories(
+  fromDate?: string,
+  toDate?: string
+): Promise<TopCategory[]> {
   try {
-    const services = await fetchTopServices();
-    const categoryMap: Record<string, { total: number; services: TopService[] }> = {};
+    // ✅ Use the date-filtered top services
+    const services = await fetchTopServices(fromDate, toDate);
+    const categoryMap: Record<string, { total: number; services: TopService[] }> =
+      {};
 
     for (const service of services) {
       const cat = service.category || "Uncategorized";
@@ -112,6 +153,7 @@ export async function fetchTopCategories(fromDate: string, toDate: string): Prom
       categoryMap[cat].services.push(service);
     }
 
+    // Sort categories by total bookings
     return Object.entries(categoryMap)
       .sort((a, b) => b[1].total - a[1].total)
       .map(([categoryName, data]) => ({
