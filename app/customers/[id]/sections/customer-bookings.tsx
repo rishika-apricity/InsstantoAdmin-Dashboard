@@ -1,4 +1,3 @@
-// app/admin/customers/[id]/sections/customer-bookings.tsx
 "use client"
 
 import React, { useEffect, useState, useMemo } from "react"
@@ -19,8 +18,8 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { 
-  Calendar, 
+import {
+  Calendar,
   Loader2,
   Search,
   Filter,
@@ -45,14 +44,8 @@ type BookingDoc = {
   amount_paid?: number
   otp?: number
   address?: any
-  checkoutItems?: any[]
   cartClone_id?: any
   itemOptions_id?: string
-}
-
-type ServiceInfo = {
-  serviceName?: string
-  subCategoryName?: string
 }
 
 const PAGE_SIZE = 10
@@ -63,9 +56,9 @@ interface CustomerBookingsTabProps {
 
 export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
   const db = getFirestoreDb()
-  
+
   const [bookings, setBookings] = useState<BookingDoc[]>([])
-  const [servicesMap, setServicesMap] = useState<Record<string, ServiceInfo>>({})
+  const [servicesMap, setServicesMap] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -93,7 +86,6 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
 
         setBookings(bookingDocs)
         await fetchServicesInfo(bookingDocs)
-        
       } catch (err: any) {
         console.error("Failed to load bookings:", err)
         try {
@@ -107,13 +99,11 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
             id: doc.id,
             ...doc.data()
           })) as BookingDoc[]
-          
           bookingDocs.sort((a, b) => {
             const dateA = a.date?.toDate?.() || new Date(0)
             const dateB = b.date?.toDate?.() || new Date(0)
             return dateB.getTime() - dateA.getTime()
           })
-          
           setBookings(bookingDocs)
           await fetchServicesInfo(bookingDocs)
         } catch (fallbackErr) {
@@ -127,40 +117,48 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
     fetchBookings()
   }, [customerId, db])
 
+  // Fetch service names from sub_categoryCart
   const fetchServicesInfo = async (bookingDocs: BookingDoc[]) => {
     try {
-      const serviceRefs = bookingDocs
-        .map(b => b.subCategoryCart_id)
-        .filter(Boolean)
-
-      if (serviceRefs.length === 0) return
-
-      const uniqueRefs = Array.from(new Set(serviceRefs.map(ref => ref?.path || ref)))
-      const servicesInfo: Record<string, ServiceInfo> = {}
+      const servicesInfo: Record<string, string[]> = {}
 
       await Promise.all(
-        uniqueRefs.map(async (refPath) => {
-          try {
-            let docRef
-            if (typeof refPath === 'string' && refPath.includes('/')) {
-              docRef = doc(db, refPath)
-            } else {
-              docRef = doc(db, "sub_categoryCart", refPath)
-            }
-            
-            const serviceDoc = await getDoc(docRef)
-            
-            if (serviceDoc.exists()) {
-              const data = serviceDoc.data()
-              servicesInfo[refPath] = {
-                serviceName: data.serviceName || data.service_name || "Unknown Service",
-                subCategoryName: data.subCategoryName || data.sub_category_name || ""
+        bookingDocs.map(async (booking) => {
+          const serviceNames: string[] = []
+
+          const cartRefs = Array.isArray(booking.subCategoryCart_id)
+            ? booking.subCategoryCart_id
+            : booking.subCategoryCart_id
+            ? [booking.subCategoryCart_id]
+            : []
+
+          for (const ref of cartRefs) {
+            try {
+              const refPath = ref?.path || ref
+              if (!refPath) continue
+
+              const cartDocRef = refPath.includes("/")
+                ? doc(db, refPath)
+                : doc(db, "sub_categoryCart", refPath)
+
+              const cartDoc = await getDoc(cartDocRef)
+              if (cartDoc.exists()) {
+                const data = cartDoc.data()
+                const name =
+                  data.serviceName ||
+                  data.service_name ||
+                  data.subCategoryName ||
+                  data.sub_category_name ||
+                  "Unknown Service"
+                serviceNames.push(name)
               }
+            } catch (err) {
+              console.warn("Error fetching cart doc:", err)
             }
-          } catch (error) {
-            console.warn(`Failed to fetch service for ${refPath}:`, error)
-            servicesInfo[refPath] = { serviceName: "Unknown Service" }
           }
+
+          servicesInfo[booking.id] =
+            serviceNames.length > 0 ? serviceNames : ["Unknown Service"]
         })
       )
 
@@ -199,33 +197,17 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
     }
   }
 
-  const getServiceInfo = (booking: BookingDoc): ServiceInfo => {
-    const refPath = booking.subCategoryCart_id?.path || booking.subCategoryCart_id
-    if (!refPath) return { serviceName: "Unknown Service" }
-    return servicesMap[refPath] || { serviceName: "Unknown Service" }
-  }
-
-  const getServicesFromCheckoutItems = (booking: BookingDoc): string[] => {
-    if (!booking.checkoutItems || !Array.isArray(booking.checkoutItems)) {
-      const serviceInfo = getServiceInfo(booking)
-      return serviceInfo.serviceName ? [serviceInfo.serviceName] : ["Unknown Service"]
-    }
-    
-    return booking.checkoutItems.map((item, index) => {
-      if (typeof item === 'object' && item !== null) {
-        return item.serviceName || item.service_name || `Service ${index + 1}`
-      }
-      return `Service ${index + 1}`
-    })
+  const getServiceInfo = (booking: BookingDoc): string[] => {
+    return servicesMap[booking.id] || ["Unknown Service"]
   }
 
   const filteredBookings = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
-    
+
     return bookings.filter((booking) => {
-      const services = getServicesFromCheckoutItems(booking)
+      const services = getServiceInfo(booking)
       const serviceNames = services.join(" ")
-      
+
       const text = [
         booking.id,
         booking.status,
@@ -240,7 +222,7 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
 
       return matchesSearch && matchesStatus
     })
-  }, [bookings, searchTerm, statusFilter])
+  }, [bookings, searchTerm, statusFilter, servicesMap])
 
   const paginatedBookings = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE
@@ -311,8 +293,8 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
         <div className="text-center py-8">
           <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
           <p className="text-muted-foreground">
-            {searchTerm || statusFilter !== "all" 
-              ? "No bookings found matching your criteria." 
+            {searchTerm || statusFilter !== "all"
+              ? "No bookings found matching your criteria."
               : "No bookings found for this customer."}
           </p>
         </div>
@@ -333,8 +315,8 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
               </TableHeader>
               <TableBody>
                 {paginatedBookings.map((booking) => {
-                  const services = getServicesFromCheckoutItems(booking)
-                  
+                  const services = getServiceInfo(booking)
+
                   return (
                     <TableRow key={booking.id}>
                       <TableCell className="font-medium">{booking.id}</TableCell>
@@ -370,18 +352,18 @@ export function CustomerBookingsTab({ customerId }: CustomerBookingsTabProps) {
               )}
             </div>
             <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => hasPrevPage && setCurrentPage(p => p - 1)} 
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => hasPrevPage && setCurrentPage(p => p - 1)}
                 disabled={!hasPrevPage || loading}
               >
-                <ChevronLeft className="h-4 w-4 mr-1" /> 
+                <ChevronLeft className="h-4 w-4 mr-1" />
                 Prev
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => hasNextPage && setCurrentPage(p => p + 1)}
                 disabled={!hasNextPage || loading}
               >

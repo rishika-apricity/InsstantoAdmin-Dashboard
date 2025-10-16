@@ -45,15 +45,12 @@ type BookingDoc = {
     amount_paid?: number
     otp?: number
     address?: any
-    checkoutItems?: any[]
     cartClone_id?: any
-    itemOptions_id?: string
+    itemOptions_id?: any
+    walletAmountUsed?: any
 }
 
-type ServiceInfo = {
-    serviceName?: string
-    subCategoryName?: string
-}
+type ServiceInfo = string[]
 
 interface PartnerBookingsSectionProps {
     partnerId: string
@@ -129,43 +126,58 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
         fetchBookings()
     }, [partnerId, db])
 
-    // fetch services info
-    const fetchServicesInfo = async (bookingDocs: BookingDoc[]) => {
-        try {
-            const serviceRefs = bookingDocs.map(b => b.subCategoryCart_id).filter(Boolean)
-            if (serviceRefs.length === 0) return
+    // ✅ Fixed version — fetch multiple service names
+ const fetchServicesInfo = async (bookingDocs: BookingDoc[]) => {
+  try {
+    const servicesInfo: Record<string, string[]> = {}
 
-            const uniqueRefs = Array.from(new Set(serviceRefs.map(ref => ref?.path || ref)))
-            const servicesInfo: Record<string, ServiceInfo> = {}
+    await Promise.all(
+      bookingDocs.map(async (booking) => {
+        const serviceNames: string[] = []
 
-            await Promise.all(
-                uniqueRefs.map(async (refPath) => {
-                    try {
-                        let docRef
-                        if (typeof refPath === "string" && refPath.includes("/")) {
-                            docRef = doc(db, refPath)
-                        } else {
-                            docRef = doc(db, "sub_categoryCart", refPath)
-                        }
-                        const serviceDoc = await getDoc(docRef)
-                        if (serviceDoc.exists()) {
-                            const data = serviceDoc.data()
-                            servicesInfo[refPath] = {
-                                serviceName: data.serviceName || data.service_name || "Unknown Service",
-                                subCategoryName: data.subCategoryName || data.sub_category_name || "",
-                            }
-                        }
-                    } catch {
-                        servicesInfo[refPath] = { serviceName: "Unknown Service" }
-                    }
-                })
-            )
+        // Handle single or multiple subCategoryCart_id entries
+        const cartRefs = Array.isArray(booking.subCategoryCart_id)
+          ? booking.subCategoryCart_id
+          : booking.subCategoryCart_id
+          ? [booking.subCategoryCart_id]
+          : []
 
-            setServicesMap(servicesInfo)
-        } catch (error) {
-            console.error("Error fetching services info:", error)
+        for (const ref of cartRefs) {
+          try {
+            const refPath = ref?.path || ref
+            if (!refPath) continue
+
+            const cartDocRef = refPath.includes("/")
+              ? doc(db, refPath)
+              : doc(db, "sub_categoryCart", refPath)
+
+            const cartDoc = await getDoc(cartDocRef)
+            if (cartDoc.exists()) {
+              const data = cartDoc.data()
+              const name =
+                data.serviceName ||
+                data.service_name ||
+                data.subCategoryName ||
+                data.sub_category_name ||
+                "Unknown Service"
+              serviceNames.push(name)
+            }
+          } catch (err) {
+            console.warn("Error fetching cart doc:", err)
+          }
         }
-    }
+
+        servicesInfo[booking.id] =
+          serviceNames.length > 0 ? serviceNames : ["Unknown Service"]
+      })
+    )
+
+    setServicesMap(servicesInfo)
+  } catch (error) {
+    console.error("Error fetching services info:", error)
+  }
+}
+
 
     // fetch customers info
     const fetchCustomerInfo = async (bookingDocs: BookingDoc[]) => {
@@ -215,6 +227,7 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
     const getStatusBadge = (status?: string) => {
         switch (status?.toLowerCase()) {
             case "completed":
+            case "service_completed":
                 return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Completed</Badge>
             case "pending":
                 return <Badge variant="outline"><Clock className="w-3 h-3 mr-1" />Pending</Badge>
@@ -230,31 +243,15 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
         }
     }
 
-    const getServiceInfo = (booking: BookingDoc): ServiceInfo => {
-        const refPath = booking.subCategoryCart_id?.path || booking.subCategoryCart_id
-        if (!refPath) return { serviceName: "Unknown Service" }
-        return servicesMap[refPath] || { serviceName: "Unknown Service" }
-    }
-
-    const getServicesFromCheckoutItems = (booking: BookingDoc): string[] => {
-        if (!booking.checkoutItems || !Array.isArray(booking.checkoutItems)) {
-            const serviceInfo = getServiceInfo(booking)
-            return serviceInfo.serviceName ? [serviceInfo.serviceName] : ["Unknown Service"]
-        }
-
-        return booking.checkoutItems.map((item, index) => {
-            if (typeof item === "object" && item !== null) {
-                return item.serviceName || item.service_name || `Service ${index + 1}`
-            }
-            return `Service ${index + 1}`
-        })
+    const getServicesForBooking = (booking: BookingDoc): string[] => {
+        return servicesMap[booking.id] || ["Unknown Service"]
     }
 
     // filter + search
     const filteredBookings = useMemo(() => {
         const term = searchTerm.trim().toLowerCase()
         return bookings.filter((booking) => {
-            const services = getServicesFromCheckoutItems(booking).join(" ")
+            const services = getServicesForBooking(booking).join(" ")
             const customer = customerMap[booking.customer_id?.path] || { name: "", phone: "" }
             const text = [
                 booking.id,
@@ -291,7 +288,6 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
     const goNext = () => { if (hasNextPage) setCurrentPage(prev => prev + 1) }
     const goPrev = () => { if (hasPrevPage) setCurrentPage(prev => prev - 1) }
 
-    // stats
     const stats = {
         total: bookings.length,
         completed: bookings.filter(b => b.status?.toLowerCase() === "service_completed").length,
@@ -375,7 +371,7 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                                     </TableHeader>
                                     <TableBody>
                                         {paginatedBookings.map((booking) => {
-                                            const services = getServicesFromCheckoutItems(booking)
+                                            const services = getServicesForBooking(booking)
                                             const customer = customerMap[booking.customer_id?.path] || { name: "Unknown", phone: "N/A" }
                                             return (
                                                 <TableRow key={booking.id}>
@@ -387,7 +383,13 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="max-w-[200px]">
-                                                        <div className="space-y-1">{services.map((s, i) => <div key={i} className="text-xs"><span className="font-medium">{s}</span></div>)}</div>
+                                                        <div className="space-y-1">
+                                                            {services.map((s, i) => (
+                                                                <div key={i} className="text-xs">
+                                                                    <span className="font-medium">{s}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </TableCell>
                                                     <TableCell className="text-sm">{formatDate(booking.date)}</TableCell>
                                                     <TableCell className="text-sm">{formatDate(booking.timeSlot)}</TableCell>

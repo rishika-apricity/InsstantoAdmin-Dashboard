@@ -8,6 +8,7 @@ import {
   DocumentData,
   query,
   where,
+  Timestamp,
 } from "firebase/firestore";
 
 export type TopService = {
@@ -43,21 +44,18 @@ export async function fetchTopServices(
     const db = getFirestoreDb();
 
     // Base query for completed bookings
-    let q = query(
-      collection(db, "bookings"),
-      where("status", "==", "Service_Completed")
-    );
+    const baseQuery = collection(db, "bookings");
+    const filters: any[] = [where("status", "==", "Service_Completed")];
 
-    // ✅ Apply date filter if provided
+    // ✅ Apply date filter using Firestore Timestamps
     if (fromDate && toDate) {
-      q = query(
-        collection(db, "bookings"),
-        where("status", "==", "Service_Completed"),
-        where("createdAt", ">=", new Date(fromDate)),
-        where("createdAt", "<=", new Date(toDate))
-      );
+      const start = Timestamp.fromDate(new Date(fromDate + "T00:00:00Z"));
+      const end = Timestamp.fromDate(new Date(toDate + "T23:59:59Z"));
+      filters.push(where("date", ">=", start));
+      filters.push(where("date", "<=", end));
     }
 
+    const q = query(baseQuery, ...filters);
     const snapshot = await getDocs(q);
 
     const allowedProviders = [
@@ -141,8 +139,7 @@ export async function fetchTopCategories(
   try {
     // ✅ Use the date-filtered top services
     const services = await fetchTopServices(fromDate, toDate);
-    const categoryMap: Record<string, { total: number; services: TopService[] }> =
-      {};
+    const categoryMap: Record<string, { total: number; services: TopService[] }> = {};
 
     for (const service of services) {
       const cat = service.category || "Uncategorized";

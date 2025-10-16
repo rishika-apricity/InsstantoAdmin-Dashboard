@@ -2,12 +2,20 @@
 
 import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { LucideIcon } from "lucide-react"
+import { LucideIcon, ChevronLeft, ChevronRight } from "lucide-react"
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LabelList,
 } from "recharts"
 import { collection, query, where, getDocs, doc } from "firebase/firestore"
 import { getFirestoreDb } from "@/lib/firebase"
+import { Button } from "@/components/ui/button"
 
 interface GraphPlaceholderProps {
   title: string
@@ -38,8 +46,9 @@ export function GraphPlaceholder({
   className = "",
 }: GraphPlaceholderProps) {
   const [data, setData] = useState<RevenuePoint[]>([])
+  const [monthOffset, setMonthOffset] = useState(0) // 👈 Shift by 6 months per click
 
-  const fetchRevenueData = async () => {
+  const fetchRevenueData = async (offset: number) => {
     const db = getFirestoreDb()
 
     const providerIds = [
@@ -50,12 +59,14 @@ export function GraphPlaceholder({
     const providerRefs = providerIds.map((id) => doc(db, "customer", id))
 
     const now = new Date()
-    const startOldest = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-    const endNewest = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    // Calculate date range based on offset
+    const startOldest = new Date(now.getFullYear(), now.getMonth() - 5 - offset, 1)
+    const endNewest = new Date(now.getFullYear(), now.getMonth() + 1 - offset, 1)
+
     const monthBuckets = Array.from({ length: 6 }, (_, i) => {
-      const start = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
-      const end = new Date(now.getFullYear(), now.getMonth() - 4 + i, 1)
-      const label = start.toLocaleString("default", { month: "short" })
+      const start = new Date(now.getFullYear(), now.getMonth() - 5 - offset + i, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() - 4 - offset + i, 1)
+      const label = start.toLocaleString("default", { month: "short", year: "2-digit" })
       return { label, start, end }
     })
 
@@ -63,9 +74,7 @@ export function GraphPlaceholder({
     const q = query(
       bookingsRef,
       where("provider_id", "in", providerRefs),
-      where("status", "==", "Service_Completed"),
-      where("date", ">=", startOldest),
-      where("date", "<", endNewest)
+      where("status", "==", "Service_Completed")
     )
     const snap = await getDocs(q)
 
@@ -79,7 +88,7 @@ export function GraphPlaceholder({
 
     snap.forEach((docSnap) => {
       const b = docSnap.data() as any
-      const when: Date = b?.date?.toDate ? b.date.toDate() : b?.date ? new Date(b.date) : null
+      const when: Date = b?.timeSlot?.toDate ? b.timeSlot.toDate() : new Date(b.timeSlot)
       if (!when) return
 
       const amt = Number(b?.amount_paid ?? 0) || 0
@@ -101,8 +110,7 @@ export function GraphPlaceholder({
       if (prev <= 0) return { ...d, changePct: null, changeDir: "flat", changeLabel: "—" }
 
       const pct = ((d.revenue - prev) / prev) * 100
-      const roundedAbs =
-        Math.abs(pct) < 10 ? Math.round(Math.abs(pct) * 10) / 10 : Math.round(Math.abs(pct))
+      const roundedAbs = Math.abs(pct) < 10 ? Math.round(Math.abs(pct) * 10) / 10 : Math.round(Math.abs(pct))
       const dir: "up" | "down" | "flat" = pct > 0 ? "up" : pct < 0 ? "down" : "flat"
       const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "–"
       const label = dir === "flat" ? "0%" : `${arrow} ${roundedAbs}%`
@@ -113,9 +121,8 @@ export function GraphPlaceholder({
   }
 
   useEffect(() => {
-    fetchRevenueData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    fetchRevenueData(monthOffset)
+  }, [monthOffset])
 
   const formatCurrency = (v: number) =>
     new Intl.NumberFormat("en-IN", {
@@ -137,11 +144,9 @@ export function GraphPlaceholder({
     )
   }
 
-  // ✅ Custom Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const p = payload[0].payload as RevenuePoint
-
       const change =
         p?.changeDir === "up"
           ? `▲ ${Math.abs(p.changePct ?? 0).toFixed(1)}%`
@@ -155,9 +160,7 @@ export function GraphPlaceholder({
           <p style={{ color: "#8884d8" }}>
             Revenue: {formatCurrency(p.revenue)} ({change})
           </p>
-          <p style={{ color: "#8884d8" }}>
-            Net Revenue: {formatCurrency(p.netRevenue)}
-          </p>
+          <p style={{ color: "#8884d8" }}>Net Revenue: {formatCurrency(p.netRevenue)}</p>
         </div>
       )
     }
@@ -165,15 +168,42 @@ export function GraphPlaceholder({
   }
 
   return (
+    <Card
+      className={`border-l-4 border-gray-300 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md ${className}`}
+    >
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Icon className={`h-5 w-5 ${iconColor.replace("/50", "")}`} />
+              {title}
+            </CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
 
-<Card className={`border-l-4 border-gray-300 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md ${className}`}>
-<CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon className={`h-5 w-5 ${iconColor.replace("/50", "")}`} />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
+          {/* 👇 Month Navigation Buttons */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setMonthOffset((prev) => prev + 6)}
+              title="Previous 6 months"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setMonthOffset((prev) => (prev > 0 ? prev - 6 : 0))}
+              disabled={monthOffset === 0}
+              title="Next 6 months"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </CardHeader>
+
       <CardContent>
         {children || (
           <div className="h-[300px]">

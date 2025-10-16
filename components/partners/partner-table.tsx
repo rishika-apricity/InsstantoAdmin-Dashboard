@@ -39,6 +39,10 @@ type Partner = {
   status: "active" | "pending" | "suspended" | "rejected"
 }
 
+interface PartnerTableProps {
+  fromDate: string;
+  toDate: string;
+}
 export function PartnerTable() {
   const [partners, setPartners] = useState<Partner[]>([])
   const [searchTerm, setSearchTerm] = useState("")

@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation" // Move this import here
+import { useRouter } from "next/navigation"
 import {
   collection,
   DocumentData,
@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, ChevronLeft, ChevronRight, Search, Users, Phone, Eye } from "lucide-react" // Add Eye icon
+import { Loader2, ChevronLeft, ChevronRight, Search, Users, Phone, Eye } from "lucide-react"
 
 type LatLng = { latitude: number; longitude: number } | { lat: number; lng: number } | null
 
@@ -46,9 +46,14 @@ type CustomerDoc = {
 
 const PAGE_SIZE = 20
 
-export function CustomerTable() {
+interface CustomerTableProps {
+  fromDate: string;
+  toDate: string;
+}
+
+export function CustomerTable({ fromDate, toDate }: CustomerTableProps) {
   const db = getFirestoreDb()
-  const router = useRouter() // Move useRouter inside the component
+  const router = useRouter()
 
   // All data state
   const [allCustomers, setAllCustomers] = useState<CustomerDoc[]>([])
@@ -64,21 +69,37 @@ export function CustomerTable() {
 
   const normalize = (v: unknown) => (v ?? "").toString().toLowerCase()
 
-  // ----- Load All Customers Initially -----
+  // ----- Load Customers Based on Date Range -----
   useEffect(() => {
-    const fetchAllCustomers = async () => {
+    const fetchCustomers = async () => {
       setLoading(true)
       setError("")
 
       try {
-        // Fetch all customers where userType.customer = true
-        const allCustomersQuery = query(
+        // Convert date strings to Firestore Timestamps
+        // Use local time instead of UTC to avoid timezone offset issues
+        const startDate = fromDate
+          ? new Date(`${fromDate}T00:00:00`)  // No 'Z'
+          : new Date(2025, 3, 1);
+
+        const endDate = toDate
+          ? new Date(`${toDate}T23:59:59`)    // No 'Z'
+          : new Date();
+
+
+        const fromTimestamp = Timestamp.fromDate(startDate);
+        const toTimestamp = Timestamp.fromDate(endDate);
+
+        // Fetch customers within the date range
+        const customersQuery = query(
           collection(db, "customer"),
           where("userType.customer", "==", true),
+          where("created_time", ">=", fromTimestamp),
+          where("created_time", "<=", toTimestamp),
           orderBy("created_time", "desc")
         )
 
-        const snapshot = await getDocs(allCustomersQuery)
+        const snapshot = await getDocs(customersQuery)
         const docs = snapshot.docs.map((d) => ({
           id: d.id,
           ...(d.data() as any)
@@ -93,8 +114,8 @@ export function CustomerTable() {
       }
     }
 
-    fetchAllCustomers()
-  }, [db])
+    fetchCustomers()
+  }, [db, fromDate, toDate])
 
   // ----- Real-time updates for new customers -----
   useEffect(() => {
@@ -105,7 +126,7 @@ export function CustomerTable() {
       collection(db, "customer"),
       where("userType.customer", "==", true),
       orderBy("created_time", "desc"),
-      limit(10) // Only listen for recent customers
+      limit(10)
     )
 
     const unsub = onSnapshot(realtimeQuery, (snapshot) => {
@@ -114,16 +135,22 @@ export function CustomerTable() {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           const doc = { id: change.doc.id, ...(change.doc.data() as any) } as CustomerDoc
-          // Check if this customer is not already in our list
+
+          // Check if this customer is not already in our list AND falls within date range
           if (!allCustomers.some(customer => customer.id === doc.id)) {
-            newDocs.push(doc)
+            const createdDate = doc.created_time?.toDate();
+            const startDate = new Date(fromDate + "T00:00:00Z");
+            const endDate = new Date(toDate + "T23:59:59Z");
+
+            if (createdDate && createdDate >= startDate && createdDate <= endDate) {
+              newDocs.push(doc)
+            }
           }
         }
       })
 
       if (newDocs.length > 0) {
         setAllCustomers(prev => {
-          // Add new customers and sort by created_time
           const combined = [...newDocs, ...prev]
           return combined.sort((a, b) => {
             const dateA = a.created_time?.toDate?.() || new Date(0)
@@ -135,7 +162,7 @@ export function CustomerTable() {
     })
 
     return () => unsub()
-  }, [db, allCustomers.length])
+  }, [db, allCustomers.length, fromDate, toDate])
 
   // ----- Filter and Search Logic -----
   const filteredCustomers = useMemo(() => {
@@ -280,7 +307,7 @@ export function CustomerTable() {
                         {filteredCustomers.length === 0 ? (
                           search ?
                             "No customers found matching your search criteria." :
-                            "No customers found."
+                            "No customers found in this date range."
                         ) : (
                           "No more results on this page."
                         )}

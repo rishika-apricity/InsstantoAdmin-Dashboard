@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { LucideIcon } from "lucide-react"
+import { LucideIcon, ChevronLeft, ChevronRight } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList } from "recharts"
 import { doc, collection, query, where, getDocs } from "firebase/firestore"
-import { getFirestoreDb } from "@/lib/firebase" // Ensure this imports the Firestore initialization
+import { getFirestoreDb } from "@/lib/firebase"
+import { Button } from "@/components/ui/button"
 
 interface ChartPlaceholderProps {
   title: string
@@ -28,92 +29,96 @@ export function ChartPlaceholder({
   className = "",
 }: ChartPlaceholderProps) {
   const [bookingsData, setBookingsData] = useState<BookingData[]>([])
+  const [monthOffset, setMonthOffset] = useState(0) // 0 = current 6 months, 6 = previous 6 months, etc.
 
-  // Function to fetch bookings data for the last 6 months for specific customer IDs
-  const fetchBookingsData = async () => {
-    const db = getFirestoreDb()  // Initialize Firestore
-
-    // Customer IDs (already provided)
+  const fetchBookingsData = async (offset: number) => {
+    const db = getFirestoreDb()
     const customerIds = [
       "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
       "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
-      "VxxapfO7l8YM5f6xmFqpThc17eD3"
+      "VxxapfO7l8YM5f6xmFqpThc17eD3",
     ]
+    const customerRefs = customerIds.map((id) => doc(db, "customer", id))
 
-    // Get the references from the customer collection based on customer IDs
-    const customerRefs = customerIds.map(id => doc(db, "customer", id))  // Note: using "customer" not "customers"
-
-    // Get current date and last 5 months
     const currentDate = new Date()
+    // Generate 6 months starting from offset
     const monthsAgo = Array.from({ length: 6 }, (_, i) => {
       const date = new Date(currentDate)
-      date.setMonth(currentDate.getMonth() - i)
+      date.setMonth(currentDate.getMonth() - i - offset)
       return date
     })
 
-    // Format months in short names (e.g., Jan, Feb, Mar)
-    const months = monthsAgo.map((date) => {
-      const monthName = date.toLocaleString("default", { month: "short" })
-      return monthName
-    })
-
-    // Reverse the array so that the current month is last
+    const months = monthsAgo.map((date) => date.toLocaleString("default", { month: "short", year: "2-digit" }))
     const reversedMonths = [...months].reverse()
 
     const bookingsCol = collection(db, "bookings")
-
-    // Prepare the queries for each month
     const bookingsQuery = query(
       bookingsCol,
       where("provider_id", "in", customerRefs),
       where("status", "==", "Service_Completed")
     )
-
     const snapshot = await getDocs(bookingsQuery)
 
-    // Initialize an array to count bookings per month
     const bookingsCount = reversedMonths.map((month) => ({
       month,
       bookings: 0,
     }))
 
-    // Count bookings for each month
     snapshot.forEach((doc) => {
       const data = doc.data()
-      const bookingDate = data.date.toDate()  // Make sure 'date' is a Firestore Date
-      const monthName = bookingDate.toLocaleString("default", { month: "short" })
-      
-      // Update the booking count for the matching month
+      const bookingDate = data.timeSlot.toDate()
+      const monthName = bookingDate.toLocaleString("default", { month: "short", year: "2-digit" })
       const monthIndex = reversedMonths.indexOf(monthName)
-      if (monthIndex !== -1) {
-        bookingsCount[monthIndex].bookings += 1
-      }
+      if (monthIndex !== -1) bookingsCount[monthIndex].bookings += 1
     })
 
-    // Set the data to state
     setBookingsData(bookingsCount)
   }
 
   useEffect(() => {
-    fetchBookingsData()
-  }, [])
+    fetchBookingsData(monthOffset)
+  }, [monthOffset])
 
   return (
-
-<Card className={`border-l-4 border-gray-300 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md ${className}`}>
-<CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon className={`h-5 w-5 ${iconColor.replace("/50", "")}`} />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
+    <Card
+      className={`border-l-4 border-gray-300 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md ${className}`}
+    >
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Icon className={`h-5 w-5 ${iconColor.replace("/50", "")}`} />
+              {title}
+            </CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          {/* Navigation Buttons */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setMonthOffset((prev) => prev + 6)}
+              title="Previous 6 months"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setMonthOffset((prev) => (prev > 0 ? prev - 6 : 0))}
+              disabled={monthOffset === 0}
+              title="Next 6 months"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {children || (
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={bookingsData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
-                {/* Gradient Definition with lighter bottom */}
                 <defs>
                   <linearGradient id="gradientColor" x1="0%" y1="0%" x2="0%" y2="100%">
                     <stop offset="0%" style={{ stopColor: "#6a11cb", stopOpacity: 1 }} />

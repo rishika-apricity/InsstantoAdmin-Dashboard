@@ -22,7 +22,7 @@ export type BookingStats = {
     completionRate: number
 }
 
-export async function fetchBookingStats(): Promise<BookingStats> {
+export async function fetchBookingStats(fromDate?: string, toDate?: string): Promise<BookingStats> {
     const db = getFirestoreDb()
 
     const customerIds = [
@@ -34,6 +34,7 @@ export async function fetchBookingStats(): Promise<BookingStats> {
     const customerRefs = customerIds.map(id => doc(db, "customer", id))
     const bookingsCol = collection(db, "bookings")
     const reviewsCol = collection(db, "reviews")
+    
 
     // Queries
     const totalBookingsQuery = query(

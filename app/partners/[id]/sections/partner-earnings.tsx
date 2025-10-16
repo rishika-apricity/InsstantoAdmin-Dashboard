@@ -35,7 +35,10 @@ import {
     Loader2,
     ArrowUpIcon,
     ArrowDownIcon,
+    ChevronLeft,
+    ChevronRight,
 } from "lucide-react"
+// import { formatDate } from "date-fns/format"
 
 type WalletTransaction = {
     id: string
@@ -53,8 +56,6 @@ interface PartnerEarningsSectionProps {
     partnerId: string
 }
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
-
 export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProps) {
     const db = getFirestoreDb()
     const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([])
@@ -64,27 +65,28 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
     const [pendingPayouts, setPendingPayouts] = useState(0)
     const [monthlyGrowth, setMonthlyGrowth] = useState(0)
     const [thisMonthEarnings, setThisMonthEarnings] = useState(0)
-
-    // Pagination
     const [page, setPage] = useState(1)
+    const [monthOffset, setMonthOffset] = useState(0) // 👈 Offset in months for chart navigation
+
     const pageSize = 10
     const totalPages = Math.ceil(walletTransactions.length / pageSize)
     const paginatedTransactions = walletTransactions.slice((page - 1) * pageSize, page * pageSize)
     const [loanRecoveredAmount, setLoanRecoveredAmount] = useState(0)
     const [netEarnings, setNetEarnings] = useState(0)
-
+    const formatDate = (timestamp: Timestamp) =>
+        timestamp.toDate().toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+        });
+ 
     useEffect(() => {
         const fetchEarningsData = async () => {
             try {
                 setLoading(true)
-
                 const partnerRef = doc(db, "customer", partnerId)
 
-                // Fetch wallet overall info
-                const walletQuery = query(
-                    collection(db, "Wallet_Overall"),
-                    where("service_partner_id", "==", partnerRef)
-                )
+                const walletQuery = query(collection(db, "Wallet_Overall"), where("service_partner_id", "==", partnerRef))
                 const walletSnapshot = await getDocs(walletQuery)
                 if (!walletSnapshot.empty) {
                     const walletData = walletSnapshot.docs[0]?.data()
@@ -93,30 +95,25 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                         setCurrentBalance(walletData.total_balance || 0)
                         setPendingPayouts(walletData.pending_amount || 0)
                     }
-                    const loanQuery = query(
-                        collection(db, "PartnerKitLoan"),
-                        where("partnerId", "==", partnerRef)
-                    )
+
+                    const loanQuery = query(collection(db, "PartnerKitLoan"), where("partnerId", "==", partnerRef))
                     const loanSnap = await getDocs(loanQuery)
                     let recovered = 0
                     if (!loanSnap.empty) {
                         recovered = loanSnap.docs[0].data().loanRecoveredAmount || 0
                     }
                     setLoanRecoveredAmount(recovered)
-
-                    // Net earnings before loan deductions
-                    setNetEarnings(walletData.TotalAmountComeIn_Wallet + recovered)
-
+                    setNetEarnings((walletData?.TotalAmountComeIn_Wallet || 0) + recovered)
                 }
 
-                // Fetch wallet transactions
+                // Wallet transactions
                 let walletTransactionsQuery
                 try {
                     walletTransactionsQuery = query(
                         collection(db, "Wallet_In_record"),
                         where("partnerId", "==", partnerRef),
                         orderBy("Timestamp", "desc"),
-                        limit(200) // Fetch recent 200
+                        limit(200)
                     )
                 } catch {
                     walletTransactionsQuery = query(
@@ -128,18 +125,10 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
 
                 const walletTransactionsSnapshot = await getDocs(walletTransactionsQuery)
                 const transactionsData: WalletTransaction[] = []
-                const bookingIds: string[] = []
 
                 walletTransactionsSnapshot.forEach((transactionDoc) => {
                     const transaction = transactionDoc.data()
                     if (transaction.payment_in_wallet && transaction.payment_in_wallet > 0) {
-                        const bookingIdValue =
-                            typeof transaction.bookingId === "string"
-                                ? transaction.bookingId
-                                : transaction.bookingId?.id
-
-                        if (bookingIdValue) bookingIds.push(bookingIdValue)
-
                         transactionsData.push({
                             id: transactionDoc.id,
                             amount: transaction.payment_in_wallet,
@@ -149,64 +138,18 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                             status: "Completed",
                             description: "Wallet credit",
                             customer_name: "Unknown",
-                            bookingId: bookingIdValue,
+                            bookingId:
+                                typeof transaction.bookingId === "string"
+                                    ? transaction.bookingId
+                                    : transaction.bookingId?.id,
                         })
                     }
                 })
 
-                // --- Batch fetch bookings ---
-                const bookingMap: Record<string, any> = {}
-                for (let i = 0; i < bookingIds.length; i += 10) {
-                    const batch = bookingIds.slice(i, i + 10)
-                    const bookingSnap = await getDocs(
-                        query(collection(db, "bookings"), where("__name__", "in", batch))
-                    )
-                    bookingSnap.forEach((docSnap) => {
-                        bookingMap[docSnap.id] = docSnap.data()
-                    })
-                }
-
-                // Collect all customerIds
-                const customerIds: string[] = []
-                Object.values(bookingMap).forEach((booking: any) => {
-                    if (booking.customer_id?.id) customerIds.push(booking.customer_id.id)
-                })
-
-                // --- Batch fetch customers ---
-                const customerMap: Record<string, any> = {}
-                for (let i = 0; i < customerIds.length; i += 10) {
-                    const batch = customerIds.slice(i, i + 10)
-                    const customerSnap = await getDocs(
-                        query(collection(db, "customer"), where("__name__", "in", batch))
-                    )
-                    customerSnap.forEach((docSnap) => {
-                        customerMap[docSnap.id] = docSnap.data()
-                    })
-                }
-
-                // --- Enrich transactions ---
-                transactionsData.forEach((tx) => {
-                    if (tx.bookingId && bookingMap[tx.bookingId]) {
-                        const booking = bookingMap[tx.bookingId]
-                        if (booking.customer_id?.id && customerMap[booking.customer_id.id]) {
-                            const customer = customerMap[booking.customer_id.id]
-                            tx.customer_name =
-                                customer.display_name || customer.customer_name || "Unknown"
-                        }
-                        tx.description = `Service payment from ${tx.customer_name}`
-                    }
-                })
-
-                // Sort transactions
-                transactionsData.sort((a, b) => {
-                    const dateA = a.date?.toDate?.() || new Date(0)
-                    const dateB = b.date?.toDate?.() || new Date(0)
-                    return dateB.getTime() - dateA.getTime()
-                })
-
+                // Sort
+                transactionsData.sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime())
                 setWalletTransactions(transactionsData)
 
-                // Calculate this month's earnings
                 const now = new Date()
                 const currentMonthEarnings = transactionsData
                     .filter((t) => {
@@ -217,21 +160,18 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
 
                 setThisMonthEarnings(currentMonthEarnings)
 
-                // Last month growth
-                const lastMonthDate = new Date()
-                lastMonthDate.setMonth(lastMonthDate.getMonth() - 1)
+                const lastMonth = new Date()
+                lastMonth.setMonth(lastMonth.getMonth() - 1)
                 const lastMonthEarnings = transactionsData
                     .filter((t) => {
                         const d = t.date.toDate()
-                        return d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear()
+                        return d.getMonth() === lastMonth.getMonth() && d.getFullYear() === lastMonth.getFullYear()
                     })
                     .reduce((sum, t) => sum + t.amount, 0)
 
-                if (lastMonthEarnings > 0) {
+                if (lastMonthEarnings > 0)
                     setMonthlyGrowth(((currentMonthEarnings - lastMonthEarnings) / lastMonthEarnings) * 100)
-                } else if (currentMonthEarnings > 0) {
-                    setMonthlyGrowth(100)
-                }
+                else if (currentMonthEarnings > 0) setMonthlyGrowth(100)
             } catch (error) {
                 console.error("Error fetching earnings data:", error)
             } finally {
@@ -239,23 +179,25 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
             }
         }
 
-        if (partnerId) {
-            fetchEarningsData()
-        }
+        if (partnerId) fetchEarningsData()
     }, [partnerId, db])
 
     const formatCurrency = (amount: number) =>
-        new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount)
+        new Intl.NumberFormat("en-IN", {
+            style: "currency",
+            currency: "INR",
+            maximumFractionDigits: 0,
+        }).format(amount)
 
-    const formatDate = (timestamp: Timestamp) =>
-        timestamp.toDate().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-
-    const generateMonthlyEarnings = (transactions: WalletTransaction[]) => {
+    // 🔄 Generates last 6 months (or shifted by monthOffset)
+    const generateMonthlyEarnings = (transactions: WalletTransaction[], offset: number) => {
         const monthlyData: { [key: string]: number } = {}
         const months: string[] = []
+
+        const currentDate = new Date()
         for (let i = 5; i >= 0; i--) {
-            const date = new Date()
-            date.setMonth(date.getMonth() - i)
+            const date = new Date(currentDate)
+            date.setMonth(currentDate.getMonth() - i - offset)
             const key = date.toLocaleDateString("en-US", { year: "numeric", month: "short" })
             months.push(key)
             monthlyData[key] = 0
@@ -264,10 +206,11 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
             const key = t.date.toDate().toLocaleDateString("en-US", { year: "numeric", month: "short" })
             if (months.includes(key)) monthlyData[key] += t.amount
         })
+
         return months.map((m) => ({ month: m, amount: monthlyData[m] || 0 }))
     }
 
-    const chartData = generateMonthlyEarnings(walletTransactions)
+    const chartData = generateMonthlyEarnings(walletTransactions, monthOffset)
 
     if (loading) {
         return (
@@ -350,9 +293,31 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
                         <TrendingUp className="w-5 h-5" />
-                        Earnings Trend (Last 6 Months)
+                        Earnings Trend ({monthOffset === 0 ? "Last 6 Months" : `Months -${monthOffset}`})
                     </CardTitle>
+
+                    {/* 👇 Month navigation buttons */}
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setMonthOffset((prev) => prev + 6)}
+                            title="Show previous 6 months"
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setMonthOffset((prev) => (prev > 0 ? prev - 6 : 0))}
+                            disabled={monthOffset === 0}
+                            title="Show newer months"
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
                 </CardHeader>
+
                 <CardContent>
                     <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
@@ -364,8 +329,8 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="month" />
-                            <YAxis tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`} />
-                            <Tooltip formatter={(value) => [formatCurrency(value as number), "Earnings"]} />
+                            <YAxis tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                            <Tooltip formatter={(v) => [formatCurrency(v as number), "Earnings"]} />
                             <Bar dataKey="amount" barSize={30} radius={[10, 10, 0, 0]} fill="url(#earningsGradient)">
                                 <LabelList
                                     dataKey="amount"
@@ -373,7 +338,7 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                                     fill="#333"
                                     fontSize={12}
                                     fontWeight="bold"
-                                    formatter={(value: number) => `₹${(value / 1000).toFixed(0)}k`}
+                                    formatter={(v: number) => `₹${(v / 1000).toFixed(0)}k`}
                                 />
                             </Bar>
                         </BarChart>

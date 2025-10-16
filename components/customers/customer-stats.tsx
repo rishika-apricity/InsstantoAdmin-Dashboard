@@ -12,18 +12,24 @@ type Stats = {
   customersWithMultipleBookings: number;
 };
 
-export function CustomerStats() {
+interface CustomerStatsProps {
+  fromDate: string;
+  toDate: string;
+}
+
+export function CustomerStats({ fromDate, toDate }: CustomerStatsProps) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadStats() {
-      const data = await fetchCustomerStats();
+      setLoading(true);
+      const data = await fetchCustomerStats(fromDate, toDate);
       setStats(data);
       setLoading(false);
     }
     loadStats();
-  }, []);
+  }, [fromDate, toDate]);
 
   if (loading) {
     return <div className="text-sm text-muted-foreground">Loading customer stats...</div>;

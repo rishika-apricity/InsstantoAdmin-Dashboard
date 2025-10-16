@@ -69,6 +69,7 @@ export async function GET(req: Request) {
     let successfulPayments = 0;
     let failedPayments = 0;
     let refundedPayments = 0;
+    let refundedAmount = 0; // <-- NEW FIELD
     let totalAmount = 0;
 
     for (const p of allPayments) {
@@ -77,7 +78,10 @@ export async function GET(req: Request) {
 
       if (status === "CAPTURED") successfulPayments++;
       if (status === "FAILED") failedPayments++;
-      if (status === "REFUNDED") refundedPayments++;
+      if (status === "REFUNDED") {
+        refundedPayments++;
+        refundedAmount += (p.amount_refunded ?? 0) / 100; // <-- ADD THIS
+      }
       totalAmount += amount;
     }
 
@@ -93,6 +97,7 @@ export async function GET(req: Request) {
       successfulPayments,
       failedPayments,
       refundedPayments,
+      refundedAmount, // <-- NEW FIELD
       totalAmount,
       totalSettlements,
       totalSettlementAmount,
