@@ -10,7 +10,6 @@ import {
   IndianRupee,
   Banknote,
   Building,
-  Coins,
 } from "lucide-react";
 
 interface PaymentStats {
@@ -19,7 +18,8 @@ interface PaymentStats {
   failedPayments: number;
   refundedPayments: number;
   refundedAmount: number;
-  totalAmount: number;
+  grossCapturedAmount: number;
+  netCollectedBeforeFees: number;
   totalSettlements: number;
   totalSettlementAmount: number;
 }
@@ -35,121 +35,120 @@ export default function PaymentStatsCards({ stats }: { stats: PaymentStats }) {
       ? ((stats.refundedPayments / stats.totalPayments) * 100).toFixed(1)
       : 0;
 
-  const netRevenue = stats.totalAmount - stats.refundedAmount;
+  const cardBase =
+    "min-h-[150px] flex flex-col justify-between p-4 rounded-2xl border-l-4 shadow-sm transition-all hover:shadow-md hover:scale-[1.01]";
+
+  const titleBase = "text-sm font-medium text-gray-600";
+  const numberBase = "text-2xl font-bold tracking-tight leading-snug";
+  const noteBase = "text-xs text-gray-500 mt-1";
 
   return (
-    <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+    <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
       {/* Total Payments */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-blue-500 bg-blue-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">Total Payments</h2>
+      <Card
+        className={`${cardBase} border-blue-500 bg-blue-50 flex flex-col justify-between`}
+      >
+        <div className="flex justify-between items-center">
+          <h2 className={titleBase}>Total Payments</h2>
           <Wallet className="h-5 w-5 text-blue-500" />
         </div>
-        <p className="text-2xl font-extrabold text-blue-600 tracking-tight">
-          {stats.totalPayments}
-        </p>
-        <p className="text-xs text-gray-500">All time payments</p>
+        <p className={`${numberBase} text-blue-600`}>{stats.totalPayments}</p>
+        <p className={noteBase}>All received payment attempts</p>
       </Card>
 
       {/* Successful */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-green-500 bg-green-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">Successful</h2>
+      <Card
+        className={`${cardBase} border-green-500 bg-green-50 flex flex-col justify-between`}
+      >
+        <div className="flex justify-between items-center">
+          <h2 className={titleBase}>Successful</h2>
           <CheckCircle className="h-5 w-5 text-green-500" />
         </div>
-        <p className="text-2xl font-extrabold text-green-600 tracking-tight">
+        <p className={`${numberBase} text-green-600`}>
           {stats.successfulPayments}
         </p>
-        <div className="flex flex-col">
-          <p className="text-xs text-gray-500 mb-1">Successful transactions</p>
-          <Badge className="w-fit bg-green-100 text-green-700 text-xs font-medium px-2 py-0.5">
-            {successRate}% success rate
-          </Badge>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-gray-500">Captured transactions</p>
+          
         </div>
       </Card>
 
       {/* Failed */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-red-500 bg-red-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">Failed</h2>
+      <Card
+        className={`${cardBase} border-red-500 bg-red-50 flex flex-col justify-between`}
+      >
+        <div className="flex justify-between items-center">
+          <h2 className={titleBase}>Failed</h2>
           <XCircle className="h-5 w-5 text-red-500" />
         </div>
-        <p className="text-2xl font-extrabold text-red-600 tracking-tight">
+        <p className={`${numberBase} text-red-600`}>
           {stats.failedPayments}
         </p>
-        <p className="text-xs text-gray-500">Failed attempts</p>
+        <p className={noteBase}>Failed attempts</p>
       </Card>
 
-      {/* Refunded */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-orange-500 bg-orange-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">Refunded</h2>
+      {/* Refunds */}
+      <Card
+        className={`${cardBase} border-orange-500 bg-orange-50 flex flex-col justify-between`}
+      >
+        <div className="flex justify-between items-center">
+          <h2 className={titleBase}>Refunded</h2>
           <RotateCcw className="h-5 w-5 text-orange-500" />
         </div>
         <div>
-          <p className="text-2xl font-extrabold text-orange-600 tracking-tight">
+          <p className={`${numberBase} text-orange-600`}>
             {stats.refundedPayments}
           </p>
-          <p className="text-lg font-semibold text-orange-700 leading-tight">
-            ₹{stats.refundedAmount?.toLocaleString("en-IN") || 0}
+          <p className="text-sm font-semibold text-orange-700 leading-tight">
+            ₹{(stats.refundedAmount || 0).toLocaleString("en-IN")}
           </p>
         </div>
-        <div className="flex flex-col">
-          <p className="text-xs text-gray-500 mb-1">Total refund amount</p>
-          <Badge className="w-fit bg-orange-100 text-orange-700 text-xs font-medium px-2 py-0.5">
-            {refundRate}% refund rate
-          </Badge>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-gray-500">Total refund amount</p>
+         
         </div>
       </Card>
 
-      {/* Total Amount */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-purple-500 bg-purple-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">Total Amount</h2>
+      {/* Gross Captured */}
+      <Card
+        className={`${cardBase} border-purple-500 bg-purple-50 flex flex-col justify-between`}
+      >
+        <div className="flex justify-between items-center">
+          <h2 className={titleBase}>Gross Captured</h2>
           <IndianRupee className="h-5 w-5 text-purple-500" />
         </div>
-        <p className="text-2xl font-extrabold text-purple-600 tracking-tight">
-          ₹{stats.totalAmount.toLocaleString("en-IN")}
+        <p className={`${numberBase} text-purple-600`}>
+          ₹{stats.grossCapturedAmount.toLocaleString("en-IN")}
         </p>
-        <p className="text-xs text-gray-500">Total earnings</p>
+        <p className={noteBase}>Captured before refunds & fees</p>
       </Card>
 
-      {/* Net Revenue */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-amber-500 bg-yellow-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">Net Revenue</h2>
-          <Coins className="h-5 w-5 text-amber-500" />
-        </div>
-        <p className="text-2xl font-extrabold text-amber-600 tracking-tight">
-          ₹{netRevenue.toLocaleString("en-IN")}
-        </p>
-        <p className="text-xs text-gray-500">After refunds</p>
-      </Card>
-
-      {/* Total Settlements */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-teal-500 bg-teal-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">Settlements</h2>
+      {/* Settlements */}
+      <Card
+        className={`${cardBase} border-teal-500 bg-teal-50 flex flex-col justify-between`}
+      >
+        <div className="flex justify-between items-center">
+          <h2 className={titleBase}>Settlements</h2>
           <Building className="h-5 w-5 text-teal-500" />
         </div>
-        <p className="text-2xl font-extrabold text-teal-600 tracking-tight">
+        <p className={`${numberBase} text-teal-600`}>
           {stats.totalSettlements}
         </p>
-        <p className="text-xs text-gray-500">Total settlement entries</p>
+        <p className={noteBase}>Settlement entries</p>
       </Card>
 
       {/* Settlement Amount */}
-      <Card className="min-h-[140px] p-4 border-l-4 border-indigo-500 bg-indigo-50 shadow-sm flex flex-col justify-between rounded-2xl transition-all hover:shadow-md hover:scale-[1.01]">
-        <div className="flex justify-between items-start">
-          <h2 className="text-base font-medium text-gray-600">
-            Settlement Amount
-          </h2>
+      <Card
+        className={`${cardBase} border-indigo-500 bg-indigo-50 flex flex-col justify-between`}
+      >
+        <div className="flex justify-between items-center">
+          <h2 className={titleBase}>Settlement Amount</h2>
           <Banknote className="h-5 w-5 text-indigo-500" />
         </div>
-        <p className="text-2xl font-extrabold text-indigo-600 tracking-tight">
+        <p className={`${numberBase} text-indigo-600`}>
           ₹{stats.totalSettlementAmount.toLocaleString("en-IN")}
         </p>
-        <p className="text-xs text-gray-500">Total settled to account</p>
+        <p className={noteBase}>After fees & adjustments</p>
       </Card>
     </div>
   );

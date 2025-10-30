@@ -7,6 +7,8 @@ import {
   doc,
 } from "firebase/firestore";
 import { getFirestoreDb } from "@/lib/firebase";
+import { fetchCustomerStats } from "@/lib/queries/customers";
+
 
 export type BookingStats = {
   totalBookings: number;
@@ -28,6 +30,9 @@ export type BookingStats = {
   totalRatingsCount: number;
   completionRate: number;
   totalOfferAmount: number;
+  cac: number;
+  cacChange: number;
+  netPnL: number;
 };
 
 function calculateChange(current: number, previous: number): number {
@@ -204,20 +209,157 @@ export async function fetchBookingStats(fromDate?: string, toDate?: string): Pro
       customers: custSnap.size,
     };
   }
+  
 
-  const thisRange = await getStats(fromTimestamp, toTimestamp);
-  const prevRange = await getStats(prevFrom, prevTo);
+  // const thisRange = await getStats(fromTimestamp, toTimestamp);
+  // const prevRange = await getStats(prevFrom, prevTo);
 
-  // 📈 Calculate percentage changes
-  const totalBookingsChange = calculateChange(thisRange.total, prevRange.total);
-  const completedBookingsChange = calculateChange(thisRange.completed, prevRange.completed);
-  const totalRevenueChange = calculateChange(thisRange.revenue, prevRange.revenue);
-  const netRevenueChange = calculateChange(thisRange.net, prevRange.net);
-  const perOrderValueChange = calculateChange(thisRange.pov, prevRange.pov);
-  const totalCustomersChange = calculateChange(thisRange.customers, prevRange.customers);
+  // // 📈 Calculate percentage changes
+  // const totalBookingsChange = calculateChange(thisRange.total, prevRange.total);
+  // const completedBookingsChange = calculateChange(thisRange.completed, prevRange.completed);
+  // const totalRevenueChange = calculateChange(thisRange.revenue, prevRange.revenue);
+  // const netRevenueChange = calculateChange(thisRange.net, prevRange.net);
+  // const perOrderValueChange = calculateChange(thisRange.pov, prevRange.pov);
+  // const totalCustomersChange = calculateChange(thisRange.customers, prevRange.customers);
 
+  // 📅 Date ranges for percentage 
+  
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1); 
+  const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+  const thisMonthFrom = Timestamp.fromDate(startOfThisMonth); 
+  const thisMonthTo = Timestamp.fromDate(now); 
+  const lastMonthFrom = Timestamp.fromDate(startOfLastMonth); 
+  const lastMonthTo = Timestamp.fromDate(endOfLastMonth);
+const thisMonth = await getStats(thisMonthFrom, thisMonthTo); 
+const lastMonth = await getStats(lastMonthFrom, lastMonthTo);
+
+const totalBookingsChange = calculateChange(thisMonth.total, lastMonth.total); 
+const completedBookingsChange = calculateChange( thisMonth.completed, lastMonth.completed ); 
+const totalRevenueChange = calculateChange(thisMonth.revenue, lastMonth.revenue); 
+const netRevenueChange = calculateChange(thisMonth.net, lastMonth.net); 
+const perOrderValueChange = calculateChange(thisMonth.pov, lastMonth.pov); 
+const totalCustomersChange = calculateChange(thisMonth.customers, lastMonth.customers);
   const completionRate =
     totalBookings > 0 ? (completedBookings / totalBookings) * 100 : 0;
+
+      // 🧮 CUSTOMER ACQUISITION COST (CAC) CALCULATION
+
+  // 1️⃣ Fetch total expense of last month from Google Sheet
+ // 🧮 CUSTOMER ACQUISITION COST (CAC) CALCULATION
+
+// 1️⃣ Fetch total expense of last month from Google Sheet
+// 🧮 CUSTOMER ACQUISITION COST (CAC) CALCULATION WITH CHANGE PERCENTAGE
+
+const sheetUrl =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vSzu4Xj2cluOSQ7-eT9VNvEkZu_3ghcImdSWYTWq2181-0M7OV16a2GN70WcC7DnagsrkZFfDeJioJo/pub?output=csv";
+
+const res = await fetch(sheetUrl);
+const text = await res.text();
+const rows = text.trim().split("\n").map((r) => r.split(","));
+
+const header = rows[0];
+const monthIndex = header.findIndex((col) => col.toLowerCase().includes("month"));
+const totalIndex = header.findIndex((col) => col.toLowerCase().includes("total"));
+
+// ✅ 1️⃣ Identify last and second last non-empty months
+let lastTotal = 0;
+let prevTotal = 0;
+let lastMonthName = "";
+let prevMonthName = "";
+for (let i = rows.length - 1; i > 0; i--) {
+  const total = parseFloat(rows[i][totalIndex]);
+  const month = rows[i][monthIndex];
+  if (!isNaN(total) && total > 0) {
+    if (!lastTotal) {
+      lastTotal = total;
+      lastMonthName = month;
+    } else if (!prevTotal) {
+      prevTotal = total;
+      prevMonthName = month;
+      break;
+    }
+  }
+}
+
+// ✅ 2️⃣ Helper to get start/end of a month
+function getMonthRange(monthName: string, year: number) {
+  const monthIndexNum = new Date(`${monthName} 1, ${year}`).getMonth();
+  const start = new Date(year, monthIndexNum, 1);
+  const end = new Date(year, monthIndexNum + 1, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    from: `${year}-${pad(monthIndexNum + 1)}-01`,
+    to: `${year}-${pad(monthIndexNum + 1)}-${pad(end.getDate())}`,
+  };
+}
+
+const currentYear = new Date().getFullYear();
+const lastRange = getMonthRange(lastMonthName, currentYear);
+const prevRange = getMonthRange(prevMonthName, currentYear);
+
+// ✅ 3️⃣ Fetch customersWithOneBooking for both months
+const { customersWithOneBooking: lastMonthNewCustomers } = await fetchCustomerStats(
+  lastRange.from,
+  lastRange.to
+);
+const { customersWithOneBooking: prevMonthNewCustomers } = await fetchCustomerStats(
+  prevRange.from,
+  prevRange.to
+);
+
+// ✅ 4️⃣ Compute CAC values
+const lastCAC =
+  lastMonthNewCustomers > 0 ? lastTotal / lastMonthNewCustomers : 0;
+const prevCAC =
+  prevMonthNewCustomers > 0 ? prevTotal / prevMonthNewCustomers : 0;
+
+// ✅ 5️⃣ Compute percentage change
+let cacChange = 0;
+if (prevCAC > 0) {
+  cacChange = ((lastCAC - prevCAC) / prevCAC) * 100;
+}
+
+// ✅ --- NET PNL CALCULATION BASED ON DATE RANGE ---
+let netPnL = 0;
+let totalExpenseInRange = 0;
+
+// 1️⃣ Extract all month totals from the sheet
+const monthlyExpenses = rows.slice(1)
+  .map(r => ({
+    month: r[monthIndex],
+    total: parseFloat(r[totalIndex]) || 0
+  }))
+  .filter(m => !isNaN(m.total) && m.total > 0);
+
+// 2️⃣ Helper to get number of days in a given month/year
+const daysInMonth = (year: number, monthIndex: number) =>
+  new Date(year, monthIndex + 1, 0).getDate();
+
+// 3️⃣ Loop through each month and check overlap with date range
+const from = new Date(fromDate || startOfThisMonth);
+const to = new Date(toDate || endOfThisMonth);
+
+monthlyExpenses.forEach(({ month, total }) => {
+  const monthIndex = new Date(`${month} 1, ${now.getFullYear()}`).getMonth();
+  const start = new Date(now.getFullYear(), monthIndex, 1);
+  const end = new Date(now.getFullYear(), monthIndex + 1, 0);
+
+  const dailyExpense = total / daysInMonth(now.getFullYear(), monthIndex);
+
+  // If overlap exists between expense month and filter range
+  const overlapStart = from > start ? from : start;
+  const overlapEnd = to < end ? to : end;
+
+  if (overlapStart <= overlapEnd) {
+    const overlapDays =
+      (overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24) + 1;
+    totalExpenseInRange += overlapDays * dailyExpense;
+  }
+});
+
+// 4️⃣ Calculate Net PnL
+netPnL = netRevenue - totalExpenseInRange;
+
 
   return {
     totalBookings,
@@ -239,5 +381,9 @@ export async function fetchBookingStats(fromDate?: string, toDate?: string): Pro
     totalRatingsCount: 0,
     completionRate: Number(completionRate.toFixed(1)),
     totalOfferAmount,
+  cac: Number(lastCAC.toFixed(2)),
+cacChange: Number(cacChange.toFixed(1)),
+netPnL: Number(netPnL.toFixed(2)),
+
   };
 }

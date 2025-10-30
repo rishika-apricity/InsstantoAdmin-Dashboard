@@ -7,7 +7,7 @@ import { Search, FileX } from "lucide-react";
 import * as XLSX from "xlsx";
 
 type RecordType = {
-  type: "PAYMENT" | "SETTLEMENT";
+  type: "PAYMENT" | "SETTLEMENT" | "REFUND";
   id: string;
   customer: { name: string; email: string; contact?: string };
   service: string;
@@ -16,6 +16,7 @@ type RecordType = {
   status: string;
   utr: string | null;
   date: string;
+  parentPayment?: string;
 };
 
 export default function PaymentTable({ records }: { records: RecordType[] }) {
@@ -74,7 +75,7 @@ export default function PaymentTable({ records }: { records: RecordType[] }) {
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search payments/settlements..."
+              placeholder="Search payments/refunds/settlements..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -129,7 +130,7 @@ export default function PaymentTable({ records }: { records: RecordType[] }) {
                 <tr key={r.id} className="border-t hover:bg-gray-50">
                   <td className="px-3 py-2">{r.id}</td>
                   <td className="px-3 py-2">
-                    {r.type === "PAYMENT" ? (
+                    {r.type === "PAYMENT" || r.type === "REFUND" ? (
                       <>
                         <div className="font-medium">{r.customer.name}</div>
                         <div className="text-xs text-muted-foreground">
@@ -165,7 +166,9 @@ export default function PaymentTable({ records }: { records: RecordType[] }) {
                     </Badge>
                   </td>
                   <td className="px-3 py-2">{r.date}</td>
-                  <td className="px-3 py-2">{r.type === "SETTLEMENT" ? r.utr : "—"}</td>
+                  <td className="px-3 py-2">
+                    {r.type === "SETTLEMENT" ? r.utr : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -198,19 +201,25 @@ export default function PaymentTable({ records }: { records: RecordType[] }) {
                   {r.status}
                 </Badge>
               </div>
-              {r.type === "PAYMENT" ? (
+
+              {(r.type === "PAYMENT" || r.type === "REFUND") && (
                 <div className="mt-2 text-sm">
                   <p className="font-medium">{r.customer.name}</p>
-                  <p className="text-xs text-muted-foreground">{r.customer.email}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {r.customer.email}
+                  </p>
                   {r.customer.contact && (
                     <p className="text-xs text-muted-foreground">
                       {r.customer.contact}
                     </p>
                   )}
                 </div>
-              ) : (
+              )}
+
+              {r.type === "SETTLEMENT" && (
                 <p className="mt-2 text-sm">UTR: {r.utr}</p>
               )}
+
               <div className="mt-2 text-sm flex justify-between">
                 <span>₹{r.amount}</span>
                 <span>{r.method}</span>

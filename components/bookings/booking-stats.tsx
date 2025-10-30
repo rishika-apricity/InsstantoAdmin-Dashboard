@@ -5,7 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Calendar, Clock, CheckCircle, Users, DollarSign, Star, TrendingUp, XCircle } from "lucide-react"
 import { fetchBookingStats, type BookingStats } from "@/lib/queries/fetchBookingStats"
 
-export default function BookingStats() {
+type BookingStatsProps = {
+  fromDate: string;
+  toDate: string;
+};
+
+export default function BookingStats({ fromDate, toDate }: BookingStatsProps) {
   const [stats, setStats] = useState<BookingStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -14,7 +19,8 @@ export default function BookingStats() {
     let mounted = true
     ;(async () => {
       try {
-        const data = await fetchBookingStats()
+        // ✅ Pass date range to Firestore query
+        const data = await fetchBookingStats(fromDate, toDate)
         if (mounted) setStats(data)
       } catch (e: any) {
         if (mounted) setError(e?.message ?? "Failed to load stats")
@@ -25,7 +31,7 @@ export default function BookingStats() {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [fromDate, toDate])
 
   if (loading) return <div className="p-4 text-sm text-muted-foreground">Loading stats…</div>
   if (error) return <div className="p-4 text-sm text-destructive">Error: {error}</div>

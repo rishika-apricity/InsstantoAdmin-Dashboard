@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -8,33 +10,36 @@ export async function GET(req: Request) {
 
     const keyId = process.env.RAZORPAY_KEY_ID!;
     const keySecret = process.env.RAZORPAY_KEY_SECRET!;
+
+    if (!keyId || !keySecret) {
+      return NextResponse.json(
+        { error: "Missing Razorpay credentials" },
+        { status: 500 }
+      );
+    }
+
     const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-
-    // Razorpay pagination settings
     const LIMIT = 100;
-    let skip = 0;
-    let allPayments: any[] = [];
 
-    // ✅ Fetch all payments
+    // ---------------------- FETCH PAYMENTS ----------------------
+    let allPayments: any[] = [];
+    let pSkip = 0;
+
     while (true) {
       const params = new URLSearchParams();
       params.set("count", LIMIT.toString());
-      params.set("skip", skip.toString());
+      params.set("skip", pSkip.toString());
       if (from) params.set("from", from);
       if (to) params.set("to", to);
 
       const res = await fetch(
         `https://api.razorpay.com/v1/payments?${params.toString()}`,
-        {
-          headers: { Authorization: `Basic ${auth}` },
-        }
+        { headers: { Authorization: `Basic ${auth}` }, cache: "no-store" }
       );
 
       if (!res.ok) {
-        return NextResponse.json(
-          { error: "Failed to fetch payments" },
-          { status: 500 }
-        );
+        console.error("Payment fetch failed:", await res.text());
+        break;
       }
 
       const data = await res.json();
@@ -42,63 +47,134 @@ export async function GET(req: Request) {
 
       allPayments.push(...items);
       if (items.length < LIMIT) break;
-      skip += LIMIT;
+      pSkip += LIMIT;
     }
 
-    // ✅ Fetch settlements
-    const settlementParams = new URLSearchParams();
-    settlementParams.set("count", LIMIT.toString());
-    if (from) settlementParams.set("from", from);
-    if (to) settlementParams.set("to", to);
+    // ---------------------- FETCH SETTLEMENTS ----------------------
+    let settlements: any[] = [];
+    let sSkip = 0;
 
-    const settlementRes = await fetch(
-      `https://api.razorpay.com/v1/settlements?${settlementParams.toString()}`,
-      {
-        headers: { Authorization: `Basic ${auth}` },
+    while (true) {
+      const sParams = new URLSearchParams();
+      sParams.set("count", LIMIT.toString());
+      sParams.set("skip", sSkip.toString());
+      if (from) sParams.set("from", from);
+      if (to) sParams.set("to", to);
+
+      const sRes = await fetch(
+        `https://api.razorpay.com/v1/settlements?${sParams.toString()}`,
+        { headers: { Authorization: `Basic ${auth}` }, cache: "no-store" }
+      );
+
+      if (!sRes.ok) break;
+      const sData = await sRes.json();
+      const sItems = sData.items ?? [];
+
+      settlements.push(...sItems);
+      if (sItems.length < LIMIT) break;
+      sSkip += LIMIT;
+    }
+
+    // ---------------------- FETCH REFUNDS ----------------------
+    let allRefunds: any[] = [];
+    let rSkip = 0;
+
+    while (true) {
+      const rParams = new URLSearchParams();
+      rParams.set("count", LIMIT.toString());
+      rParams.set("skip", rSkip.toString());
+      if (from) rParams.set("from", from);
+      if (to) rParams.set("to", to);
+
+      const rRes = await fetch(
+        `https://api.razorpay.com/v1/refunds?${rParams.toString()}`,
+        { headers: { Authorization: `Basic ${auth}` }, cache: "no-store" }
+      );
+
+      if (!rRes.ok) {
+        console.warn("Refund fetch failed:", await rRes.text());
+        break;
       }
+
+      const rData = await rRes.json();
+      const rItems = rData.items ?? [];
+
+      allRefunds.push(...rItems);
+      if (rItems.length < LIMIT) break;
+      rSkip += LIMIT;
+    }
+
+    // ---------------------- ENRICH REFUNDS WITH CUSTOMER DETAILS ----------------------
+    const refundsWithCustomer = allRefunds.map((r) => {
+      const parentPayment = allPayments.find((p) => p.id === r.payment_id);
+
+      return {
+        ...r,
+        // ✅ Customer Details Derived from Parent Payment
+        customer_name:
+          parentPayment?.email?.split("@")[0] ||
+          parentPayment?.contact ||
+          "Unknown",
+        customer_email: parentPayment?.email || "N/A",
+        customer_contact: parentPayment?.contact || "N/A",
+
+        // ✅ Parent Payment Details
+        parent_payment_id: r.payment_id || "N/A",
+        parent_amount: (parentPayment?.amount ?? 0) / 100,
+        parent_method: parentPayment?.method
+          ? parentPayment.method.toUpperCase()
+          : "N/A",
+      };
+    });
+
+    // ---------------------- COMPUTE STATS ----------------------
+    const totalPayments = allPayments.length;
+    const successfulPayments = allPayments.filter(
+      (p) => p.status?.toUpperCase() === "CAPTURED"
+    ).length;
+    const failedPayments = allPayments.filter(
+      (p) => p.status?.toUpperCase() === "FAILED"
+    ).length;
+
+    const grossCapturedAmount = allPayments.reduce((sum, p) => {
+      if (p.status?.toUpperCase() === "CAPTURED") {
+        return sum + (p.amount ?? 0) / 100;
+      }
+      return sum;
+    }, 0);
+
+    const totalRefunds = refundsWithCustomer.length;
+    const totalRefundAmount = refundsWithCustomer.reduce(
+      (sum, r) => sum + (r.amount ?? 0) / 100,
+      0
     );
 
-    let settlements: any[] = [];
-    if (settlementRes.ok) {
-      const sData = await settlementRes.json();
-      settlements = sData.items ?? [];
-    }
+    const refundedPaymentIds = new Set(
+      refundsWithCustomer.map((r) => r.payment_id)
+    );
+    const refundedPayments = refundedPaymentIds.size;
 
-    // ✅ Compute payment stats
-    let totalPayments = allPayments.length;
-    let successfulPayments = 0;
-    let failedPayments = 0;
-    let refundedPayments = 0;
-    let refundedAmount = 0; // <-- NEW FIELD
-    let totalAmount = 0;
+    const netCollectedBeforeFees = Math.max(
+      grossCapturedAmount - totalRefundAmount,
+      0
+    );
 
-    for (const p of allPayments) {
-      const status = p.status?.toUpperCase() || "N/A";
-      const amount = (p.amount ?? 0) / 100;
-
-      if (status === "CAPTURED") successfulPayments++;
-      if (status === "FAILED") failedPayments++;
-      if (status === "REFUNDED") {
-        refundedPayments++;
-        refundedAmount += (p.amount_refunded ?? 0) / 100; // <-- ADD THIS
-      }
-      totalAmount += amount;
-    }
-
-    // ✅ Compute settlement stats
     const totalSettlements = settlements.length;
     const totalSettlementAmount = settlements.reduce(
       (sum, s) => sum + (s.amount ?? 0) / 100,
       0
     );
 
+    // ---------------------- FINAL RESPONSE ----------------------
     const stats = {
       totalPayments,
       successfulPayments,
       failedPayments,
       refundedPayments,
-      refundedAmount, // <-- NEW FIELD
-      totalAmount,
+      totalRefunds,
+      refundedAmount: totalRefundAmount,
+      grossCapturedAmount,
+      netCollectedBeforeFees,
       totalSettlements,
       totalSettlementAmount,
     };
@@ -106,10 +182,11 @@ export async function GET(req: Request) {
     return NextResponse.json({
       payments: allPayments,
       settlements,
+      refunds: refundsWithCustomer,
       stats,
     });
   } catch (e: any) {
-    console.error("Payments API error:", e.message || e);
+    console.error("Payments API error:", e?.message || e);
     return NextResponse.json(
       { error: e?.message || "Unknown error" },
       { status: 500 }

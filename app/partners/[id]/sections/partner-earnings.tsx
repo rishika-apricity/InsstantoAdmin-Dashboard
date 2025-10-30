@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
     BarChart,
     Bar,
@@ -38,7 +38,6 @@ import {
     ChevronLeft,
     ChevronRight,
 } from "lucide-react"
-// import { formatDate } from "date-fns/format"
 
 type WalletTransaction = {
     id: string
@@ -54,25 +53,30 @@ type WalletTransaction = {
 
 interface PartnerEarningsSectionProps {
     partnerId: string
+    fromDate: string
+    toDate: string
 }
 
-export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProps) {
+export function PartnerEarningsSection({ partnerId, fromDate, toDate }: PartnerEarningsSectionProps) {
     const db = getFirestoreDb()
-    const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([])
+    const [allWalletTransactions, setAllWalletTransactions] = useState<WalletTransaction[]>([])
     const [loading, setLoading] = useState(true)
-    const [totalEarnings, setTotalEarnings] = useState(0)
+    const [totalEarningsOverall, setTotalEarningsOverall] = useState(0)
     const [currentBalance, setCurrentBalance] = useState(0)
     const [pendingPayouts, setPendingPayouts] = useState(0)
     const [monthlyGrowth, setMonthlyGrowth] = useState(0)
     const [thisMonthEarnings, setThisMonthEarnings] = useState(0)
     const [page, setPage] = useState(1)
-    const [monthOffset, setMonthOffset] = useState(0) // 👈 Offset in months for chart navigation
+    const [monthOffset, setMonthOffset] = useState(0)
+    const [loanRecoveredAmount, setLoanRecoveredAmount] = useState(0)
+    const [netEarningsOverall, setNetEarningsOverall] = useState(0)
+    
+    // Filtered earnings for date range
+    const [filteredEarnings, setFilteredEarnings] = useState(0)
+    const [filteredNetEarnings, setFilteredNetEarnings] = useState(0)
 
     const pageSize = 10
-    const totalPages = Math.ceil(walletTransactions.length / pageSize)
-    const paginatedTransactions = walletTransactions.slice((page - 1) * pageSize, page * pageSize)
-    const [loanRecoveredAmount, setLoanRecoveredAmount] = useState(0)
-    const [netEarnings, setNetEarnings] = useState(0)
+
     const formatDate = (timestamp: Timestamp) =>
         timestamp.toDate().toLocaleDateString("en-IN", {
             day: "2-digit",
@@ -86,12 +90,13 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                 setLoading(true)
                 const partnerRef = doc(db, "customer", partnerId)
 
+                // Fetch overall wallet data (not filtered)
                 const walletQuery = query(collection(db, "Wallet_Overall"), where("service_partner_id", "==", partnerRef))
                 const walletSnapshot = await getDocs(walletQuery)
                 if (!walletSnapshot.empty) {
                     const walletData = walletSnapshot.docs[0]?.data()
                     if (walletData) {
-                        setTotalEarnings(walletData.TotalAmountComeIn_Wallet || 0)
+                        setTotalEarningsOverall(walletData.TotalAmountComeIn_Wallet || 0)
                         setCurrentBalance(walletData.total_balance || 0)
                         setPendingPayouts(walletData.pending_amount || 0)
                     }
@@ -103,33 +108,33 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                         recovered = loanSnap.docs[0].data().loanRecoveredAmount || 0
                     }
                     setLoanRecoveredAmount(recovered)
-                    setNetEarnings((walletData?.TotalAmountComeIn_Wallet || 0) + recovered)
+                    setNetEarningsOverall((walletData?.TotalAmountComeIn_Wallet || 0) + recovered)
                 }
 
-                // Wallet transactions
-                let walletTransactionsQuery
+                // Fetch ALL wallet transactions (for chart - not filtered by date)
+                let allTransactionsQuery
                 try {
-                    walletTransactionsQuery = query(
+                    allTransactionsQuery = query(
                         collection(db, "Wallet_In_record"),
                         where("partnerId", "==", partnerRef),
                         orderBy("Timestamp", "desc"),
                         limit(200)
                     )
                 } catch {
-                    walletTransactionsQuery = query(
+                    allTransactionsQuery = query(
                         collection(db, "Wallet_In_record"),
                         where("partnerId", "==", partnerRef),
                         limit(200)
                     )
                 }
 
-                const walletTransactionsSnapshot = await getDocs(walletTransactionsQuery)
-                const transactionsData: WalletTransaction[] = []
+                const allTransactionsSnapshot = await getDocs(allTransactionsQuery)
+                const allTransactionsData: WalletTransaction[] = []
 
-                walletTransactionsSnapshot.forEach((transactionDoc) => {
+                allTransactionsSnapshot.forEach((transactionDoc) => {
                     const transaction = transactionDoc.data()
                     if (transaction.payment_in_wallet && transaction.payment_in_wallet > 0) {
-                        transactionsData.push({
+                        allTransactionsData.push({
                             id: transactionDoc.id,
                             amount: transaction.payment_in_wallet,
                             date: transaction.Timestamp || Timestamp.now(),
@@ -146,12 +151,12 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                     }
                 })
 
-                // Sort
-                transactionsData.sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime())
-                setWalletTransactions(transactionsData)
+                allTransactionsData.sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime())
+                setAllWalletTransactions(allTransactionsData)
 
+                // Calculate this month earnings (for growth calculation)
                 const now = new Date()
-                const currentMonthEarnings = transactionsData
+                const currentMonthEarnings = allTransactionsData
                     .filter((t) => {
                         const d = t.date.toDate()
                         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
@@ -162,7 +167,7 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
 
                 const lastMonth = new Date()
                 lastMonth.setMonth(lastMonth.getMonth() - 1)
-                const lastMonthEarnings = transactionsData
+                const lastMonthEarnings = allTransactionsData
                     .filter((t) => {
                         const d = t.date.toDate()
                         return d.getMonth() === lastMonth.getMonth() && d.getFullYear() === lastMonth.getFullYear()
@@ -172,6 +177,7 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                 if (lastMonthEarnings > 0)
                     setMonthlyGrowth(((currentMonthEarnings - lastMonthEarnings) / lastMonthEarnings) * 100)
                 else if (currentMonthEarnings > 0) setMonthlyGrowth(100)
+
             } catch (error) {
                 console.error("Error fetching earnings data:", error)
             } finally {
@@ -182,6 +188,34 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
         if (partnerId) fetchEarningsData()
     }, [partnerId, db])
 
+    // Calculate filtered earnings based on date range
+// Calculate filtered earnings based on date range (or overall if none)
+useEffect(() => {
+  if (allWalletTransactions.length === 0) return;
+
+  // If no dates selected → show overall totals
+  if (!fromDate || !toDate) {
+    const totalAll = allWalletTransactions.reduce((sum, t) => sum + t.amount, 0);
+    setFilteredEarnings(totalAll);
+    setFilteredNetEarnings(totalAll + loanRecoveredAmount);
+    return;
+  }
+
+  // ✅ If date range selected → filter transactions within that range
+  const startDate = new Date(`${fromDate}T00:00:00`);
+  const endDate = new Date(`${toDate}T23:59:59`);
+
+  const filtered = allWalletTransactions.filter((t) => {
+    const transDate = t.date.toDate();
+    return transDate >= startDate && transDate <= endDate;
+  });
+
+  const totalFiltered = filtered.reduce((sum, t) => sum + t.amount, 0);
+  setFilteredEarnings(totalFiltered);
+  setFilteredNetEarnings(totalFiltered + loanRecoveredAmount);
+}, [allWalletTransactions, fromDate, toDate, loanRecoveredAmount]);
+
+
     const formatCurrency = (amount: number) =>
         new Intl.NumberFormat("en-IN", {
             style: "currency",
@@ -189,7 +223,7 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
             maximumFractionDigits: 0,
         }).format(amount)
 
-    // 🔄 Generates last 6 months (or shifted by monthOffset)
+    // Generate monthly earnings for chart (NOT filtered by date range)
     const generateMonthlyEarnings = (transactions: WalletTransaction[], offset: number) => {
         const monthlyData: { [key: string]: number } = {}
         const months: string[] = []
@@ -210,7 +244,18 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
         return months.map((m) => ({ month: m, amount: monthlyData[m] || 0 }))
     }
 
-    const chartData = generateMonthlyEarnings(walletTransactions, monthOffset)
+    const chartData = generateMonthlyEarnings(allWalletTransactions, monthOffset)
+
+    // Filtered transactions for table display
+    const filteredTransactionsForTable = allWalletTransactions.filter((t) => {
+        const startDate = new Date(`${fromDate}T00:00:00`)
+        const endDate = new Date(`${toDate}T23:59:59`)
+        const transDate = t.date.toDate()
+        return transDate >= startDate && transDate <= endDate
+    })
+
+    const totalPages = Math.ceil(filteredTransactionsForTable.length / pageSize)
+    const paginatedTransactions = filteredTransactionsForTable.slice((page - 1) * pageSize, page * pageSize)
 
     if (loading) {
         return (
@@ -225,36 +270,50 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
         <div className="space-y-6">
             {/* KPI Cards */}
             <div className="grid gap-4 md:grid-cols-4">
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-orange-100 rounded-lg">
-                                <CreditCard className="w-6 h-6 text-orange-600" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Total Earnings (before loan deductions)</p>
-                                <p className="text-2xl font-bold">{formatCurrency(netEarnings)}</p>
-                                <span className="text-xs text-muted-foreground">
-                                    Includes ₹{formatCurrency(loanRecoveredAmount)} recovered from loans
-                                </span>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-green-100 rounded-lg"><DollarSign className="w-6 h-6 text-green-600" /></div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Net Earnings</p>
-                                <p className="text-2xl font-bold">{formatCurrency(totalEarnings)}</p>
-                                <span className="text-xs text-muted-foreground">
-                                    Income after loan deductions
-                                </span>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+              <Card>
+  <CardContent className="p-6">
+    <div className="flex items-center gap-4">
+      <div className="p-3 bg-orange-100 rounded-lg">
+        <CreditCard className="w-6 h-6 text-orange-600" />
+      </div>
+      <div>
+        <p className="text-sm text-muted-foreground">
+          Total Earnings (before loan deductions)
+        </p>
+        <p className="text-2xl font-bold">
+          {formatCurrency(filteredNetEarnings)}
+        </p>
+        <span className="text-xs text-muted-foreground">
+          {fromDate && toDate
+            ? "In selected date range"
+            : "Overall earnings"}
+        </span>
+      </div>
+    </div>
+  </CardContent>
+</Card>
+
+<Card>
+  <CardContent className="p-6">
+    <div className="flex items-center gap-4">
+      <div className="p-3 bg-green-100 rounded-lg">
+        <DollarSign className="w-6 h-6 text-green-600" />
+      </div>
+      <div>
+        <p className="text-sm text-muted-foreground">Net Earnings</p>
+        <p className="text-2xl font-bold">
+          {formatCurrency(filteredEarnings)}
+        </p>
+        <span className="text-xs text-muted-foreground">
+          {fromDate && toDate
+            ? "In selected date range"
+            : "Overall earnings"}
+        </span>
+      </div>
+    </div>
+  </CardContent>
+</Card>
+
                 <Card>
                     <CardContent className="p-6">
                         <div className="flex items-center gap-4">
@@ -288,15 +347,13 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                 </Card>
             </div>
 
-            {/* Earnings Chart */}
+            {/* Earnings Chart - NOT FILTERED */}
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
                         <TrendingUp className="w-5 h-5" />
-                        Earnings Trend ({monthOffset === 0 ? "Last 6 Months" : `Months -${monthOffset}`})
+                        Earnings Trend - Overall ({monthOffset === 0 ? "Last 6 Months" : `Months -${monthOffset}`})
                     </CardTitle>
-
-                    {/* 👇 Month navigation buttons */}
                     <div className="flex items-center gap-2">
                         <Button
                             variant="outline"
@@ -346,14 +403,14 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                 </CardContent>
             </Card>
 
-            {/* Transactions */}
+            {/* Transactions - FILTERED */}
             <Card>
                 <CardHeader><CardTitle className="flex items-center gap-2"><History className="w-5 h-5" /> Recent Transactions</CardTitle></CardHeader>
                 <CardContent>
-                    {walletTransactions.length === 0 ? (
+                    {allWalletTransactions.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                             <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <p>No wallet transactions found for this partner.</p>
+                            <p>No wallet transactions found for this date range.</p>
                         </div>
                     ) : (
                         <>
@@ -382,7 +439,6 @@ export function PartnerEarningsSection({ partnerId }: PartnerEarningsSectionProp
                                 </Table>
                             </div>
 
-                            {/* Pagination Controls */}
                             <div className="flex justify-between items-center mt-4">
                                 <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
                                 <span className="text-sm">Page {page} of {totalPages}</span>

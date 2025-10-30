@@ -37,11 +37,11 @@ export function PerformanceMetrics({
   const [categoriesPage, setCategoriesPage] = useState(1);
   const [peakHoursPage, setPeakHoursPage] = useState(1);
 
-  useEffect(() => {
-    const loadCategories = async () => {
-      const categories = await fetchTopCategories(fromDate, toDate);
-      setTopCategories(categories);
-    };
+useEffect(() => {
+  const loadCategories = async () => {
+    const categories = await fetchTopCategories(fromDate, toDate);
+    setTopCategories(categories);
+  };
 
     const loadSlots = async () => {
       const slots = await fetchMostBookedSlots(fromDate, toDate);
@@ -88,10 +88,10 @@ export function PerformanceMetrics({
       <Card className="border-l-4 border-blue-500 bg-white shadow-sm transition-transform hover:scale-[1.02] hover:shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground font-bold">
-            <Clock className="h-5 w-5 text-blue-500" /> Peak Hours
+            <Clock className="h-5 w-5 text-blue-500" /> Slots with Maximum Bookings
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Most active booking times today
+            Most active booking time Slots
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -100,20 +100,34 @@ export function PerformanceMetrics({
               <p className="text-sm text-muted-foreground">No data available</p>
             ) : (
               <>
-                {paginatedPeakHours.map((hour, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{hour.time}</span>
-                    <div className="flex items-center gap-3">
-                      <Progress value={hour.percentage} className="w-16 h-2" />
-                      <span className="text-sm text-muted-foreground w-8">
-                        {hour.percentage}%
-                      </span>
-                      <Badge variant="outline" className="text-xs">
-                        {hour.bookings}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+             {paginatedPeakHours.map((hour, index) => (
+  <div key={index} className="flex flex-col justify-between py-1">
+    {/* Row 1: Time + Revenue */}
+    <div className="flex items-center justify-between">
+   <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+  {hour.time}
+  <Badge variant="outline" className="text-xs">
+    {hour.bookings}
+  </Badge>
+</span>
+
+            <div className="flex items-center gap-3">
+        <Progress value={hour.percentage} className="w-16 h-2" />
+        <span className="text-xs text-muted-foreground w-8">
+          {hour.percentage}%
+        </span>
+      </div>
+      <span className="text-sm font-semibold text-green-600">
+        ₹{hour.revenue?.toLocaleString("en-IN") || 0}
+      </span>
+    </div>
+
+    {/* Row 2: Progress + Booking Count */}
+    {/* <div className="flex items-center justify-end mt-1">
+    </div> */}
+  </div>
+))}
+
                 {/* Pagination Controls */}
                 {totalPeakHoursPages > 1 && (
                   <div className="flex items-center justify-between pt-2 border-t">
@@ -158,20 +172,30 @@ export function PerformanceMetrics({
           ) : (
             <div className="space-y-3">
               {paginatedCategories.map((category, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {category.categoryName}
-                      </span>
-                      <Badge variant="outline">{category.totalBookings}</Badge>
-                    </div>
-                    <span className="text-xs text-muted-foreground block mt-0.5">
-                      {category.topService}
+                <div key={index} className="flex flex-col justify-between py-1">
+                  {/* Row 1: Category Name + Revenue */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {category.categoryName}
                     </span>
+                    <span className="text-sm font-semibold text-green-600">
+                      ₹{category.totalRevenue?.toLocaleString("en-IN") || 0}
+                    </span>
+                  </div>
+
+                  {/* Row 2: Top Service + Booking Count */}
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="text-xs text-muted-foreground">
+                      {category.topService}   
+                    </span>
+                    <Badge variant="outline" className="text-xs">
+                      {category.totalBookings}
+                    </Badge>
                   </div>
                 </div>
               ))}
+
+
               {/* Pagination Controls */}
               {totalCategoriesPages > 1 && (
                 <div className="flex items-center justify-between pt-2 border-t">

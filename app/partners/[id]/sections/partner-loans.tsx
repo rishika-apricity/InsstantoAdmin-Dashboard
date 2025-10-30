@@ -50,14 +50,14 @@ type LoanData = {
 
 interface PartnerLoansSectionProps {
   partnerId: string
+  fromDate: string
+  toDate: string
 }
 
-export function PartnerLoansSection({ partnerId }: PartnerLoansSectionProps) {
+export function PartnerLoansSection({ partnerId, fromDate, toDate }: PartnerLoansSectionProps) {
   const db = getFirestoreDb()
   const [loan, setLoan] = useState<LoanData | null>(null)
   const [loading, setLoading] = useState(true)
-
-  // pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const rowsPerPage = 8
 
@@ -145,22 +145,38 @@ export function PartnerLoansSection({ partnerId }: PartnerLoansSectionProps) {
     }
   }
 
-  // sort bookings by date (latest first)
-  const sortedBookings = useMemo(() => {
+  // Filter bookings by date range and sort
+  const filteredAndSortedBookings = useMemo(() => {
     if (!loan?.bookingDetails) return []
-    return [...loan.bookingDetails].sort((a, b) => {
-      const dateA = a.bookingDate?.toDate?.() || new Date(0)
-      const dateB = b.bookingDate?.toDate?.() || new Date(0)
-      return dateB.getTime() - dateA.getTime()
-    })
-  }, [loan?.bookingDetails])
+    
+    const startDate = new Date(`${fromDate}T00:00:00`)
+    const endDate = new Date(`${toDate}T23:59:59`)
 
-  // paginate sorted bookings
-  const totalPages = Math.ceil(sortedBookings.length / rowsPerPage)
-  const paginatedBookings = sortedBookings.slice(
+    return [...loan.bookingDetails]
+      .filter((booking) => {
+        const bookingDate = booking.bookingDate?.toDate()
+        return bookingDate && bookingDate >= startDate && bookingDate <= endDate
+      })
+      .sort((a, b) => {
+        const dateA = a.bookingDate?.toDate?.() || new Date(0)
+        const dateB = b.bookingDate?.toDate?.() || new Date(0)
+        return dateB.getTime() - dateA.getTime()
+      })
+  }, [loan?.bookingDetails, fromDate, toDate])
+
+  const totalPages = Math.ceil(filteredAndSortedBookings.length / rowsPerPage)
+  const paginatedBookings = filteredAndSortedBookings.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   )
+
+  // Calculate filtered stats
+  const filteredStats = useMemo(() => {
+    return {
+      totalDeductions: filteredAndSortedBookings.reduce((sum, b) => sum + (b.loanAmount || 0), 0),
+      totalRevenue: filteredAndSortedBookings.reduce((sum, b) => sum + (b.partnerfare || 0), 0),
+    }
+  }, [filteredAndSortedBookings])
 
   if (loading) {
     return (
@@ -182,12 +198,10 @@ export function PartnerLoansSection({ partnerId }: PartnerLoansSectionProps) {
 
   return (
     <div className="space-y-6">
-      {/* Loan Status */}
       <div className="flex justify-end">
         {getStatusBadge(loan.loanStatus)}
       </div>
 
-      {/* Loan Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4">
@@ -240,16 +254,15 @@ export function PartnerLoansSection({ partnerId }: PartnerLoansSectionProps) {
         </Card>
       </div>
 
-      {/* Loan Deduction Summary Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Loan Deduction Summary</CardTitle>
+          <CardTitle>Loan Deduction Summary ({filteredAndSortedBookings.length} deductions)</CardTitle>
         </CardHeader>
         <CardContent>
-          {!sortedBookings.length ? (
+          {!filteredAndSortedBookings.length ? (
             <div className="text-center py-8 text-muted-foreground">
               <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No deduction records found.</p>
+              <p>No deduction records found for this date range.</p>
             </div>
           ) : (
             <>
@@ -257,7 +270,6 @@ export function PartnerLoansSection({ partnerId }: PartnerLoansSectionProps) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {/* <TableHead>Booking Name</TableHead> */}
                       <TableHead>Date</TableHead>
                       <TableHead>Partner Fare</TableHead>
                       <TableHead>Loan Deducted</TableHead>
@@ -268,7 +280,6 @@ export function PartnerLoansSection({ partnerId }: PartnerLoansSectionProps) {
                   <TableBody>
                     {paginatedBookings.map((b, i) => (
                       <TableRow key={i}>
-                        {/* <TableCell>{b.bookingName}</TableCell> */}
                         <TableCell>{formatDate(b.bookingDate)}</TableCell>
                         <TableCell>{formatCurrency(b.partnerfare)}</TableCell>
                         <TableCell>{formatCurrency(b.loanAmount)}</TableCell>
@@ -280,7 +291,6 @@ export function PartnerLoansSection({ partnerId }: PartnerLoansSectionProps) {
                 </Table>
               </div>
 
-              {/* Pagination Controls */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-4">
                   <Button

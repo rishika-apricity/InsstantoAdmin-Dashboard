@@ -14,6 +14,7 @@ export default function PaymentsPage() {
   const [records, setRecords] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const today = new Date();
   const year = today.getFullYear();
@@ -25,57 +26,104 @@ export default function PaymentsPage() {
   const [toDate, setToDate] = useState<string>(formatDateInput(lastDay));
 
   const fetchData = async () => {
-    setLoading(true);
+    try {
+      setLoading(true);
+      setError(null);
 
-    const params = new URLSearchParams();
-    if (fromDate) {
-      const fromUTC = new Date(fromDate + "T00:00:00Z");
-      params.set("from", Math.floor(fromUTC.getTime() / 1000).toString());
+      const params = new URLSearchParams();
+      if (fromDate) {
+        const fromUTC = new Date(fromDate + "T00:00:00Z");
+        params.set("from", Math.floor(fromUTC.getTime() / 1000).toString());
+      }
+      if (toDate) {
+        const toUTC = new Date(toDate + "T23:59:59Z");
+        params.set("to", Math.floor(toUTC.getTime() / 1000).toString());
+      }
+
+      const res = await fetch(`/api/payments?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `API error: ${res.status}`);
+      }
+
+      const resData = await res.json();
+      const { payments: pItems, settlements: sItems, refunds: rItems, stats } = resData;
+
+      // ✅ Normalize PAYMENTS (exclude refunded ones)
+      const mappedPayments = (pItems ?? [])
+        .filter((p: any) => String(p.status).toUpperCase() !== "REFUNDED")
+        .map((p: any) => ({
+          type: "PAYMENT",
+          id: p.id,
+          customer: {
+            name: p.email?.split("@")[0] || p.contact || "Unknown",
+            email: p.email || "N/A",
+            contact: p.contact || "-",
+          },
+          service: p.description || "N/A",
+          amount: (p.amount ?? 0) / 100,
+          method: p.method ? String(p.method).toUpperCase() : "N/A",
+          status: p.status ? String(p.status).toUpperCase() : "N/A",
+          utr: null,
+          ts: (p.created_at ?? 0) * 1000,
+          date: new Date((p.created_at ?? 0) * 1000).toLocaleDateString("en-IN"),
+        }));
+
+      // ✅ Normalize REFUNDS (with parent payment details)
+      const mappedRefunds = (rItems ?? []).map((r: any) => ({
+        type: "REFUND",
+        id: r.id,
+        customer: {
+          name: r.customer_name || "-",
+          email: r.customer_email || "-",
+          contact: r.customer_contact || "-",
+        },
+        service: "-",
+        amount: (r.amount ?? 0) / 100,
+        method: r.parent_method || "-",
+        status: "REFUNDED",
+        utr: null,
+        parentPayment: r.parent_payment_id || "—",
+        ts: (r.created_at ?? 0) * 1000,
+        date: new Date((r.created_at ?? 0) * 1000).toLocaleDateString("en-IN"),
+      }));
+
+      // ✅ Normalize SETTLEMENTS
+      const mappedSettlements = (sItems ?? []).map((s: any) => ({
+        type: "SETTLEMENT",
+        id: s.id,
+        customer: { name: "-", email: "-", contact: "-" },
+        service: "-",
+        amount: (s.amount ?? 0) / 100,
+        method: "-",
+        status: "SETTLEMENT",
+        utr: s.utr || "—",
+        ts: (s.created_at ?? 0) * 1000,
+        date: new Date((s.created_at ?? 0) * 1000).toLocaleDateString("en-IN"),
+      }));
+
+      // ✅ Combine and sort all records (latest first)
+      const combined = [...mappedPayments, ...mappedRefunds, ...mappedSettlements].sort(
+        (a, b) => b.ts - a.ts
+      );
+
+      setRecords(combined);
+      setStats(stats);
+    } catch (err: any) {
+      setError(err?.message || "Failed to load payments");
+      setRecords([]);
+      setStats(null);
+    } finally {
+      setLoading(false);
     }
-    if (toDate) {
-      const toUTC = new Date(toDate + "T23:59:59Z");
-      params.set("to", Math.floor(toUTC.getTime() / 1000).toString());
-    }
-
-    const res = await fetch(`/api/payments?${params.toString()}`);
-    const { payments: pItems, settlements: sItems, stats } = await res.json();
-
-    // normalize payments
-    const mappedPayments = pItems.map((p: any) => ({
-      type: "PAYMENT",
-      id: p.id,
-      customer: {
-        name: p.email?.split("@")[0] || "Unknown",
-        email: p.email || "N/A",
-      },
-      service: p.description || "N/A",
-      amount: p.amount / 100,
-      method: p.method ? p.method.toUpperCase() : "N/A",
-      status: p.status ? p.status.toUpperCase() : "N/A",
-      utr: null,
-      date: new Date(p.created_at * 1000).toLocaleDateString("en-IN"),
-    }));
-
-    // normalize settlements
-    const mappedSettlements = sItems.map((s: any) => ({
-      type: "SETTLEMENT",
-      id: s.id,
-      customer: { name: "-", email: "-" },
-      service: "-",
-      amount: s.amount / 100,
-      method: "-",
-      status: "SETTLEMENT",
-      utr: s.utr || "—",
-      date: new Date(s.created_at * 1000).toLocaleDateString("en-IN"),
-    }));
-
-    setRecords([...mappedPayments, ...mappedSettlements]);
-    setStats(stats);
-    setLoading(false);
   };
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate]);
 
   const clearFilter = () => {
@@ -95,7 +143,7 @@ export default function PaymentsPage() {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
                 <p className="text-muted-foreground text-lg font-semibold">
-                  Monitor, track, and manage all payment & settlement data
+                  Monitor, track, and manage all payment, refund & settlement data
                 </p>
               </div>
 
@@ -105,7 +153,7 @@ export default function PaymentsPage() {
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                   className="border rounded px-2 py-1"
-                  max={formatDateInput(today)}  /* Disable future dates */
+                  max={formatDateInput(today)}
                 />
                 <span>to</span>
                 <input
@@ -113,7 +161,7 @@ export default function PaymentsPage() {
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                   className="border rounded px-2 py-1"
-                  max={formatDateInput(today)}  /* Disable future dates */
+                  max={formatDateInput(today)}
                 />
                 <button
                   onClick={clearFilter}
@@ -124,9 +172,16 @@ export default function PaymentsPage() {
               </div>
             </div>
 
-            {loading ? (
-              <p>Loading...</p>
-            ) : (
+            {/* Data Section */}
+            {loading && <p>Loading...</p>}
+
+            {!loading && error && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                {error}
+              </p>
+            )}
+
+            {!loading && !error && (
               <>
                 {stats && <PaymentStatsCards stats={stats} />}
                 <PaymentTable records={records} />

@@ -35,30 +35,36 @@ export async function fetchBookingStats(fromDate?: string, toDate?: string): Pro
     const bookingsCol = collection(db, "bookings")
     const reviewsCol = collection(db, "reviews")
     
+    // ✅ Build date filters (local timezone, no UTC offset to avoid extra day)
+    const filters: any[] = []
+    if (fromDate) {
+        const startDate = new Date(fromDate + "T00:00:00")
+        filters.push(where("date", ">=", Timestamp.fromDate(startDate)))
+    }
+    if (toDate) {
+        const endDate = new Date(toDate + "T23:59:59")
+        filters.push(where("date", "<=", Timestamp.fromDate(endDate)))
+    }
 
-    // Queries
-    const totalBookingsQuery = query(
-        bookingsCol,
-        where("provider_id", "in", customerRefs),
-    )
-    const pendingQuery = query(bookingsCol, where("status", "==", "Pending"))
-    const confirmedQuery = query(
-        bookingsCol,
+    // ✅ Append common filters dynamically
+    const qWithFilters = (...clauses: any[]) => query(bookingsCol, ...filters, ...clauses)
+
+    // Queries with date range applied
+    const totalBookingsQuery = qWithFilters(where("provider_id", "in", customerRefs))
+    const pendingQuery = qWithFilters(where("status", "==", "Pending"))
+    const confirmedQuery = qWithFilters(
         where("provider_id", "in", customerRefs),
         where("status", "==", "Accepted")
     )
-    const completedQuery = query(
-        bookingsCol,
+    const completedQuery = qWithFilters(
         where("provider_id", "in", customerRefs),
         where("status", "==", "Service_Completed")
     )
-    const cancelledQuery = query(
-        bookingsCol,
+    const cancelledQuery = qWithFilters(
         where("provider_id", "in", customerRefs),
         where("status", "==", "Cancelled")
     )
-    const cancelledByCustomerQuery = query(
-        bookingsCol,
+    const cancelledByCustomerQuery = qWithFilters(
         where("provider_id", "in", customerRefs),
         where("status", "==", "Cancelled_By_Customer")
     )
@@ -94,7 +100,7 @@ export async function fetchBookingStats(fromDate?: string, toDate?: string): Pro
         totalRevenue += data.amount_paid || 0
     })
 
-    // ⭐ Fetch real partner ratings
+    // ⭐ Fetch real partner ratings (no date filter applied to reviews)
     const reviewsQuery = query(
         reviewsCol,
         where("partnerId", "in", customerRefs)

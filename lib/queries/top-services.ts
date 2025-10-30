@@ -21,7 +21,9 @@ export type TopCategory = {
   categoryName: string;
   totalBookings: number;
   topService: string;
+  totalRevenue?: number;
 };
+
 
 // Firestore document types
 type SubCategoryDoc = {
@@ -137,26 +139,107 @@ export async function fetchTopCategories(
   toDate?: string
 ): Promise<TopCategory[]> {
   try {
-    // ✅ Use the date-filtered top services
-    const services = await fetchTopServices(fromDate, toDate);
-    const categoryMap: Record<string, { total: number; services: TopService[] }> = {};
+    const db = getFirestoreDb();
 
-    for (const service of services) {
-      const cat = service.category || "Uncategorized";
-      if (!categoryMap[cat]) {
-        categoryMap[cat] = { total: 0, services: [] };
-      }
-      categoryMap[cat].total += service.bookings;
-      categoryMap[cat].services.push(service);
+    // ✅ Allowed providers
+    const allowedProviders = [
+      "VxxapfO7l8YM5f6xmFqpThc17eD3",
+      "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
+      "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
+    ];
+
+    // ✅ Base query: completed bookings in range
+    const baseQuery = collection(db, "bookings");
+    const filters: any[] = [where("status", "==", "Service_Completed")];
+
+    if (fromDate && toDate) {
+      const start = Timestamp.fromDate(new Date(fromDate + "T00:00:00Z"));
+      const end = Timestamp.fromDate(new Date(toDate + "T23:59:59Z"));
+      filters.push(where("date", ">=", start));
+      filters.push(where("date", "<=", end));
     }
 
-    // Sort categories by total bookings
-    return Object.entries(categoryMap)
-      .sort((a, b) => b[1].total - a[1].total)
+    const q = query(baseQuery, ...filters);
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) return [];
+
+    const bookings = snapshot.docs
+      .map((d) => d.data())
+      .filter((b) => {
+        const providerId = b.provider_id?.id || b.provider_id;
+        return allowedProviders.includes(providerId);
+      });
+
+    if (bookings.length === 0) return [];
+
+    // ✅ Collect unique subCategory references
+    const subCategoryRefs = new Set<string>();
+    for (const booking of bookings) {
+      if (booking.subCategoryCart_id?.path) {
+        subCategoryRefs.add(booking.subCategoryCart_id.path);
+      }
+    }
+
+    // ✅ Fetch all subcategory docs only once
+    const subCategoryDataMap = new Map<
+      string,
+      { serviceName: string; categoryName: string }
+    >();
+
+    await Promise.all(
+      Array.from(subCategoryRefs).map(async (path) => {
+        const subCatSnap = await getDoc(doc(db, path));
+        const subCatData = subCatSnap.data() as SubCategoryDoc | undefined;
+        if (!subCatData) return;
+
+        let categoryName = "Uncategorized";
+        if (subCatData.service_subCategory) {
+          const categorySnap = await getDoc(subCatData.service_subCategory);
+          const categoryData = categorySnap.data() as CategoryDoc | undefined;
+          categoryName = categoryData?.name || "Uncategorized";
+        }
+
+        subCategoryDataMap.set(path, {
+          serviceName: subCatData.service_name,
+          categoryName,
+        });
+      })
+    );
+
+    // ✅ Aggregate bookings + revenue per category
+    const categoryStats: Record<
+      string,
+      { totalBookings: number; totalRevenue: number; topService: string }
+    > = {};
+
+    for (const booking of bookings) {
+      const subPath = booking.subCategoryCart_id?.path;
+      const amount = Number(booking.amount_paid || 0);
+      if (!subPath || !subCategoryDataMap.has(subPath)) continue;
+
+      const { categoryName, serviceName } = subCategoryDataMap.get(subPath)!;
+
+      if (!categoryStats[categoryName]) {
+        categoryStats[categoryName] = {
+          totalBookings: 0,
+          totalRevenue: 0,
+          topService: serviceName,
+        };
+      }
+
+      categoryStats[categoryName].totalBookings += 1;
+      categoryStats[categoryName].totalRevenue += amount;
+    }
+
+    // ✅ Sort by highest bookings
+    return Object.entries(categoryStats)
+      .sort((a, b) => b[1].totalBookings - a[1].totalBookings)
       .map(([categoryName, data]) => ({
         categoryName,
-        totalBookings: data.total,
-        topService: data.services[0]?.name || "No services",
+        totalBookings: data.totalBookings,
+        topService: data.topService,
+        totalRevenue: data.totalRevenue,
       }));
   } catch (error) {
     console.error("Error fetching top categories:", error);

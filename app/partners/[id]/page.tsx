@@ -53,7 +53,7 @@ import { PartnerCreditsSection } from "./sections/partner-credits"
 import { PartnerDocumentsSection } from "./sections/partner-documents"
 import { PartnerChemicalsSection } from "./sections/partner-chemicals"
 import { PartnerLoansSection } from "./sections/partner-loans"
-import { PartnerReviewsSection } from "./sections/partner-review" // 🔹 NEW
+import { PartnerReviewsSection } from "./sections/partner-review"
 
 type PartnerDoc = {
   id: string
@@ -74,7 +74,7 @@ type PartnerDoc = {
   services?: string[]
   ratings_average?: number
   total_reviews?: number
-  completedBookings?: number   // ✅ add
+  completedBookings?: number
   totalBookings?: number
 }
 
@@ -86,6 +86,11 @@ type WalletDoc = {
   pending_amount?: number
   last_payout_date?: Timestamp
   is_paid?: boolean
+  filteredEarnings?: number // ✅ Add filtered earnings
+}
+
+function formatDateInput(d: Date) {
+  return d.toLocaleDateString("en-CA"); // ✅ Formats as YYYY-MM-DD
 }
 
 export default function PartnerDetailsPage() {
@@ -94,101 +99,27 @@ export default function PartnerDetailsPage() {
   const partnerId = params.id as string
   const db = getFirestoreDb()
 
+  // ✅ Date Range States
+  const [fromDate, setFromDate] = useState<string>("")
+  const [toDate, setToDate] = useState<string>("")
+
   // States
   const [partner, setPartner] = useState<PartnerDoc | null>(null)
   const [walletInfo, setWalletInfo] = useState<WalletDoc | null>(null)
   const [loading, setLoading] = useState(true)
   const [walletLoading, setWalletLoading] = useState(true)
   const [error, setError] = useState("")
-  const [activeTab, setActiveTab] = useState("earnings") // ✅ FIXED
+  const [activeTab, setActiveTab] = useState("earnings")
   const [workingDays, setWorkingDays] = useState(0)
   const [nonWorkingDays, setNonWorkingDays] = useState(0)
 
-
-
-  // Fetch partner details
-  // Fetch total + completed bookings
-useEffect(() => {
-  const fetchBookingsStats = async () => {
-    if (!partner?.id) return
-    try {
-      const partnerRef = doc(db, "customer", partner.id)
-      const bookingsQuery = query(
-        collection(db, "bookings"),
-        where("provider_id", "==", partnerRef)
-      )
-      const snapshot = await getDocs(bookingsQuery)
-
-      let total = snapshot.size
-      let completed = 0
-      let workingDaysSet = new Set<string>()
-
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data()
-
-        if (data.status?.toLowerCase() === "service_completed") {
-          completed++
-
-          if (data.timeSlot instanceof Timestamp) {
-            const date = data.timeSlot.toDate()
-            const now = new Date()
-
-            if (
-              date.getMonth() === now.getMonth() &&
-              date.getFullYear() === now.getFullYear()
-            ) {
-              workingDaysSet.add(date.toDateString())
-            }
-          }
-        }
-      })
-
-      // ✅ total days in this month
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = now.getMonth()
-      const daysInMonth = new Date(year, month + 1, 0).getDate()
-
-      const totalWorkingDays = workingDaysSet.size
-      const totalNonWorkingDays = daysInMonth - totalWorkingDays
-
-      setPartner(prev =>
-        prev ? { ...prev, totalBookings: total, completedBookings: completed } : prev
-      )
-      setWorkingDays(totalWorkingDays)
-      setNonWorkingDays(totalNonWorkingDays) // 👈 you'll need new state
-    } catch (err) {
-      console.error("Failed to fetch bookings stats:", err)
-    }
+  // ✅ Reset button
+  const clearFilter = () => {
+    setFromDate("")
+    setToDate("")
   }
 
-  fetchBookingsStats()
-}, [partner?.id, db])
-
-
-
-
-  // Fetch wallet information
-  useEffect(() => {
-    const fetchWalletInfo = async () => {
-      if (!partner?.id) return
-      try {
-        setWalletLoading(true)
-        const partnerRef = doc(db, "customer", partner.id)
-        const walletQuery = query(collection(db, "Wallet_Overall"), where("service_partner_id", "==", partnerRef))
-        const snapshot = await getDocs(walletQuery)
-        if (!snapshot.empty) {
-          const [walletDoc] = snapshot.docs
-          if (walletDoc) {
-            setWalletInfo({ id: walletDoc.id, ...(walletDoc.data() as any) } as WalletDoc)
-          }
-        }
-      } catch (err: any) { console.error("Failed to load wallet info:", err) } finally { setWalletLoading(false) }
-    }
-
-    fetchWalletInfo()
-  }, [partner?.id, db])
-  // Fetch partner details (first step before stats)
+  // Fetch partner details
   useEffect(() => {
     const fetchPartner = async () => {
       if (!partnerId) return
@@ -217,25 +148,177 @@ useEffect(() => {
     fetchPartner()
   }, [partnerId, db])
 
+  // ✅ Fetch bookings stats (working days current month by default)
+useEffect(() => {
+  const fetchBookingsStats = async () => {
+    if (!partner?.id) return
+    try {
+      const partnerRef = doc(db, "customer", partner.id)
 
-  // Fetch reviews & ratings summary
+      let startDate: Date
+      let endDate: Date
+      let queryFilters: any[] = [where("provider_id", "==", partnerRef)]
+
+      if (fromDate && toDate) {
+        // ✅ Use selected range
+        startDate = new Date(`${fromDate}T00:00:00`)
+        endDate = new Date(`${toDate}T23:59:59`)
+        queryFilters.push(where("date", ">=", Timestamp.fromDate(startDate)))
+        queryFilters.push(where("date", "<=", Timestamp.fromDate(endDate)))
+      } else {
+        // ✅ No date selected → show all-time completed bookings,
+        // but working days should still use current month
+        const now = new Date()
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      }
+
+      // ✅ All-time or date-filtered bookings
+      const bookingsQuery = query(collection(db, "bookings"), ...queryFilters)
+      const snapshot = await getDocs(bookingsQuery)
+
+      let total = snapshot.size
+      let completed = 0
+      let workingDaysSet = new Set<string>()
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data()
+
+        if (data.status?.toLowerCase() === "service_completed") {
+          completed++
+        }
+
+        // ✅ Working days logic (only current month if no date selected)
+        if (data.timeSlot instanceof Timestamp) {
+          const slotDate = data.timeSlot.toDate()
+          const isWithinRange = slotDate >= startDate && slotDate <= endDate
+          if (isWithinRange) workingDaysSet.add(slotDate.toDateString())
+        }
+      })
+
+      const rangeDurationMs = endDate.getTime() - startDate.getTime()
+      const rangeDurationDays =
+        Math.ceil(rangeDurationMs / (1000 * 60 * 60 * 24)) + 1
+
+      const totalWorkingDays = workingDaysSet.size
+      const totalNonWorkingDays = rangeDurationDays - totalWorkingDays
+
+      setWorkingDays(totalWorkingDays)
+      setNonWorkingDays(totalNonWorkingDays)
+
+      // ✅ Always update total & completed bookings (both all-time and filtered)
+      setPartner((prev) =>
+        prev
+          ? { ...prev, totalBookings: total, completedBookings: completed }
+          : prev
+      )
+    } catch (err) {
+      console.error("Failed to fetch bookings stats:", err)
+    }
+  }
+
+  fetchBookingsStats()
+}, [partner?.id, db, fromDate, toDate])
+
+
+  // Fetch wallet information (all-time by default)
+  useEffect(() => {
+    const fetchWalletInfo = async () => {
+      if (!partner?.id) return
+      try {
+        setWalletLoading(true)
+        const partnerRef = doc(db, "customer", partner.id)
+
+        const walletQuery = query(collection(db, "Wallet_Overall"), where("service_partner_id", "==", partnerRef))
+        const snapshot = await getDocs(walletQuery)
+        if (!snapshot.empty) {
+          const [walletDoc] = snapshot.docs
+          if (walletDoc) {
+            const walletData = walletDoc.data()
+
+            let filteredEarnings = 0
+            if (fromDate && toDate) {
+              const startDate = new Date(`${fromDate}T00:00:00`)
+              const endDate = new Date(`${toDate}T23:59:59`)
+              const fromTimestamp = Timestamp.fromDate(startDate)
+              const toTimestamp = Timestamp.fromDate(endDate)
+
+              const walletTransactionsQuery = query(
+                collection(db, "Wallet_In_record"),
+                where("partnerId", "==", partnerRef),
+                where("Timestamp", ">=", fromTimestamp),
+                where("Timestamp", "<=", toTimestamp)
+              )
+              const transactionsSnap = await getDocs(walletTransactionsQuery)
+
+              transactionsSnap.forEach((docSnap) => {
+                const transaction = docSnap.data()
+                if (transaction.payment_in_wallet && transaction.payment_in_wallet > 0) {
+                  filteredEarnings += transaction.payment_in_wallet
+                }
+              })
+            } else {
+              // ✅ All-time earnings
+              const allTx = await getDocs(
+                query(collection(db, "Wallet_In_record"), where("partnerId", "==", partnerRef))
+              )
+              allTx.forEach((docSnap) => {
+                const t = docSnap.data()
+                if (t.payment_in_wallet && t.payment_in_wallet > 0) {
+                  filteredEarnings += t.payment_in_wallet
+                }
+              })
+            }
+
+            setWalletInfo({
+              id: walletDoc.id,
+              ...walletData,
+              filteredEarnings,
+            } as any)
+          }
+        }
+      } catch (err: any) {
+        console.error("Failed to load wallet info:", err)
+      } finally {
+        setWalletLoading(false)
+      }
+    }
+
+    fetchWalletInfo()
+  }, [partner?.id, db, fromDate, toDate])
+
+  // Fetch reviews (all-time by default)
   useEffect(() => {
     const fetchReviews = async () => {
       if (!partner?.id) return
       try {
         const partnerRef = doc(db, "customer", partner.id)
-        const reviewsQuery = query(
-          collection(db, "reviews"),
-          where("partnerId", "==", partnerRef)
-        )
-        const snapshot = await getDocs(reviewsQuery)
+
+        let reviewsQueryRef
+        if (fromDate && toDate) {
+          const startDate = new Date(`${fromDate}T00:00:00`)
+          const endDate = new Date(`${toDate}T23:59:59`)
+          const fromTimestamp = Timestamp.fromDate(startDate)
+          const toTimestamp = Timestamp.fromDate(endDate)
+
+          reviewsQueryRef = query(
+            collection(db, "reviews"),
+            where("partnerId", "==", partnerRef),
+            where("timestamp", ">=", fromTimestamp),
+            where("timestamp", "<=", toTimestamp)
+          )
+        } else {
+          reviewsQueryRef = query(collection(db, "reviews"), where("partnerId", "==", partnerRef))
+        }
+
+        const snapshot = await getDocs(reviewsQueryRef)
 
         if (!snapshot.empty) {
           let total = 0
           let count = 0
           snapshot.forEach(doc => {
             const data = doc.data() as any
-            if (typeof data.partnerRating === "number") {
+            if (typeof data.partnerRating === "number" && data.partnerRating > 0) {
               total += data.partnerRating
               count++
             }
@@ -251,10 +334,8 @@ useEffect(() => {
     }
 
     fetchReviews()
-  }, [partner?.id, db])
+  }, [partner?.id, db, fromDate, toDate])
 
-
-  // Helper functions
   const formatDate = (timestamp?: Timestamp) => {
     if (!timestamp?.toDate) return "—"
     return timestamp.toDate().toLocaleDateString("en-IN", {
@@ -377,13 +458,40 @@ useEffect(() => {
               </Button>
             </div>
 
-            {/* Partner Profile Card */}
-            {/* ... (profile & stats code unchanged for brevity) ... */}
-            {/* Partner Profile Card */}
+            {/* ✅ Date Range Filter */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white p-4 rounded-lg border">
+              <div>
+                <p className="text-muted-foreground text-sm font-medium">
+                  Filter partner data by date range
+                </p>
+              </div>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="border rounded px-3 py-2 text-sm"
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="border rounded px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={clearFilter}
+                  className="bg-gray-200 hover:bg-gray-300 text-sm px-3 py-2 rounded whitespace-nowrap"
+                >
+                  Show All Time
+                </button>
+              </div>
+            </div>
+
+            {/* Partner Profile Card - (remains unchanged) */}
             <Card>
               <CardContent className="p-6">
                 <div className="flex flex-col lg:flex-row gap-6">
-                  {/* Avatar and Basic Info */}
                   <div className="flex flex-col items-center lg:items-start gap-4">
                     <Avatar className="w-24 h-24">
                       <AvatarImage src={partner.photo_url} alt={partner.display_name || partner.customer_name} />
@@ -405,9 +513,7 @@ useEffect(() => {
 
                   <Separator orientation="vertical" className="hidden lg:block" />
 
-                  {/* Contact and Status Information */}
                   <div className="flex-1 grid gap-6 lg:grid-cols-2">
-                    {/* Contact Info */}
                     <div className="space-y-4">
                       <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Contact Information</h4>
                       <div className="space-y-3">
@@ -444,7 +550,6 @@ useEffect(() => {
                       </div>
                     </div>
 
-                    {/* Status and Performance */}
                     <div className="space-y-4">
                       <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Status & Performance</h4>
                       <div className="space-y-3">
@@ -487,7 +592,6 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {/* Services */}
                 {partner.services && partner.services.length > 0 && (
                   <>
                     <Separator className="my-6" />
@@ -514,15 +618,16 @@ useEffect(() => {
                     </div>
                     <div>
                       <p className="text-sm font-medium">Total Earnings</p>
-                      <p className="text-2xl font-bold">{formatCurrency(walletInfo?.TotalAmountComeIn_Wallet || 0)}</p>
+                      <p className="text-2xl font-bold">
+                        {formatCurrency(walletInfo?.filteredEarnings || 0)}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                                Total earnings after loan deductions till now
+                        Earnings in selected date range
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-
 
               <Card>
                 <CardContent className="p-4">
@@ -534,12 +639,13 @@ useEffect(() => {
                       <p className="text-sm font-medium">Completed Bookings</p>
                       <p className="text-2xl font-bold">{partner?.completedBookings || 0}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                                Total completed bookings till now
+                        In selected date range
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
+
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
@@ -547,16 +653,15 @@ useEffect(() => {
                       <Briefcase className="w-5 h-5 text-purple-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">Working Days (This Month)</p>
+                      <p className="text-sm font-medium">Working Days</p>
                       <p className="text-2xl font-bold">{workingDays}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                                Total {nonWorkingDays} non-working Days
+                        {nonWorkingDays} non-working days in range
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-
 
               <Card>
                 <CardContent className="p-4">
@@ -567,28 +672,13 @@ useEffect(() => {
                     <div>
                       <p className="text-sm font-medium">Rating</p>
                       <p className="text-2xl font-bold">{partner.ratings_average?.toFixed(1) || "0.0"}</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                                Based on {partner.total_reviews || 0} reviews
-                            </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Based on {partner.total_reviews || 0} reviews in range
+                      </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-
-              {/* 
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <Award className="w-5 h-5 text-purple-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Total Reviews</p>
-                      <p className="text-2xl font-bold">{partner.total_reviews || 0}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card> */}
             </div>
 
             {/* Detailed Sections */}
@@ -615,7 +705,6 @@ useEffect(() => {
                       <CreditCard className="w-4 h-4" />
                       <span className="hidden sm:inline">Credits</span>
                     </TabsTrigger>
-
                     <TabsTrigger value="chemicals" className="flex items-center gap-2">
                       <ShoppingCart className="w-4 h-4" />
                       <span className="hidden sm:inline">Chemicals</span>
@@ -631,16 +720,16 @@ useEffect(() => {
                   </TabsList>
 
                   <TabsContent value="earnings" className="mt-6">
-                    <PartnerEarningsSection partnerId={partnerId} />
+                    <PartnerEarningsSection partnerId={partnerId} fromDate={fromDate} toDate={toDate} />
                   </TabsContent>
                   <TabsContent value="bookings" className="mt-6">
-                    <PartnerBookingsSection partnerId={partnerId} />
+                    <PartnerBookingsSection partnerId={partnerId}  />
                   </TabsContent>
                   <TabsContent value="loans" className="mt-6">
-                    <PartnerLoansSection partnerId={partnerId} />
+                    <PartnerLoansSection partnerId={partnerId} fromDate={fromDate} toDate={toDate} />
                   </TabsContent>
                   <TabsContent value="credits" className="mt-6">
-                    <PartnerCreditsSection partnerId={partnerId} />
+                    <PartnerCreditsSection partnerId={partnerId}  />
                   </TabsContent>
                   <TabsContent value="documents" className="mt-6">
                     <PartnerDocumentsSection partnerId={partnerId} />

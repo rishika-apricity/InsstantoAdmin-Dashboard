@@ -9,6 +9,11 @@ import { ChartPlaceholder } from "@/components/dashboard/chart-placeholder";
 import { GraphPlaceholder } from "@/components/dashboard/graph-placeholder";
 import { PerformanceMetrics } from "@/components/dashboard/performance-metrics";
 import { Calendar, Users, DollarSign, TrendingUp, UserPlus, Star, Activity, BarChart3 } from "lucide-react";
+import { CACGraph } from "@/components/dashboard/cac-graph";
+import { ExpensePieChart } from "@/components/dashboard/expense-pie-chart";
+import { TopPartnersCard } from "@/components/dashboard/top-partners-card";
+import {DailyOverviewCard} from "@/components/dashboard/daily-overview"
+import { PnLGraph } from "@/components/dashboard/PnLGraph";
 
 function formatDateInput(d: Date) {
   return d.toLocaleDateString("en-CA"); // ✅ Formats as YYYY-MM-DD
@@ -23,7 +28,7 @@ export default function DashboardPage() {
   const today = new Date();
   const defaultStart = new Date(2025, 3, 1); // Month is 0-indexed → 3 = April
   const defaultEnd = today;
-  
+
   const [fromDate, setFromDate] = useState<string>(formatDateInput(defaultStart));
   const [toDate, setToDate] = useState<string>(formatDateInput(defaultEnd));
 
@@ -67,6 +72,32 @@ export default function DashboardPage() {
           description: "After discounts",
         },
         {
+          title: "CAC",
+          value: `₹${Math.round(data.cac).toLocaleString()}`,
+          change: `${data.cacChange}%`,
+          trend: data.cacChange >= 0 ? "up" : "down",
+          icon: Star,
+          color: "text-chart-2",
+          description: "Customer Acquisition Cost",
+          hoverContent: (
+            <CACGraph
+              title="Customer Acquisition Cost Trend"
+              description="Month-over-month CAC variation"
+              icon={Star}
+              iconColor="text-chart-2"
+            />
+          ),
+        },
+        {
+          title: "Net P&L",
+          value: `₹${Math.round(data.netPnL).toLocaleString()}`,
+          change: `${data.netRevenueChange}%`, // optional or can be computed later
+          trend: data.netPnL >= 0 ? "up" : "down",
+          icon: DollarSign,
+          color: data.netPnL >= 0 ? "text-green-600" : "text-red-500",
+          description: "P&L after expenses",
+        },
+        {
           title: "Per Order Value",
           value: `₹${Math.round(data.perOrderValue).toLocaleString()}`,
           change: `${data.perOrderValueChange}%`,
@@ -75,24 +106,10 @@ export default function DashboardPage() {
           color: "text-chart-4",
           description: "Average per booking",
         },
-        {
-          title: "Total Signups",
-          value: data.totalCustomers.toLocaleString(),
-          change: `${data.totalCustomersChange}%`,
-          trend: data.totalCustomersChange >= 0 ? "up" : "down",
-          icon: UserPlus,
-          color: "text-primary",
-          description: "New customer registrations",
-        },
-        {
-          title: "CAC",
-          value: "0",
-          change: "0%",
-          trend: "up" as const,
-          icon: Star,
-          color: "text-chart-2",
-          description: "Customer Acquisition Cost",
-        },
+
+
+
+
       ]);
     } catch (err) {
       console.error(err);
@@ -120,18 +137,18 @@ export default function DashboardPage() {
                 <p className="text-muted-foreground text-lg font-semibold"> Track key business metrics and performance here </p>
               </div>
               <div className="flex gap-2 items-center">
-                <input 
-                  type="date" 
-                  value={fromDate} 
-                  onChange={(e) => setFromDate(e.target.value)} 
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
                   className="border rounded px-2 py-1"
                   max={formatDateInput(today)}  // Disable future dates
                 />
                 <span>to</span>
-                <input 
-                  type="date" 
-                  value={toDate} 
-                  onChange={(e) => setToDate(e.target.value)} 
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
                   className="border rounded px-2 py-1"
                   max={formatDateInput(today)}  // Disable future dates
                 />
@@ -155,8 +172,20 @@ export default function DashboardPage() {
               <ChartPlaceholder title="Monthly Bookings Trend" description="Booking volume over the selected range" icon={BarChart3} iconColor="text-primary" className="col-span-2" />
               <GraphPlaceholder title="Revenue Distribution" description="Revenue by service category" icon={Activity} iconColor="text-secondary" className="col-span-2" />
             </div>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <PnLGraph title="Net Profit & Loss Overview" description="Monthly earnings, expenses, and overall profit or loss trend" icon={BarChart3} className="col-span-2" />
+              <ExpensePieChart className="col-span-2" />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <TopPartnersCard />
+              {/* <TodayBookingsCard /> will come next */}
+              <DailyOverviewCard/>
+            </div>
+
             {/* ---- Performance Metrics ---- */}
             <PerformanceMetrics fromDate={""} toDate={""} />
+
           </main>
         </div>
       </div>
