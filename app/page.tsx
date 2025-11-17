@@ -51,7 +51,7 @@ export default function DashboardPage() {
           trend: data.completedBookingsChange >= 0 ? "up" : "down",
           icon: Calendar,
           color: "text-primary",
-          description: "Bookings successfully completed",
+          description: "Completed Bookings",
         },
         {
           title: "Total Sales",

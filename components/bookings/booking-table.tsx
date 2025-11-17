@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Phone, Calendar, Search, Filter } from "lucide-react"
-
+import { DetailsSheet } from "@/components/bookings/booking-component"
 // ---------- Types ----------
 type BookingDoc = {
   id: string
@@ -61,6 +61,11 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
+const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
+
+  const [detailsOpen, setDetailsOpen] = useState(false)
+
+
 
   // ---------- Fetch bookings within date range ----------
   useEffect(() => {
@@ -82,7 +87,7 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
           where("date", "<=", toTimestamp),
           orderBy("date", "desc")
         )
-        
+
         const snapshot = await getDocs(allBookingsQuery)
 
         const docs: BookingDoc[] = snapshot.docs.map(d => ({
@@ -114,12 +119,12 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           const docData = { id: change.doc.id, ...(change.doc.data() as any) }
-          
+
           // Check if booking falls within date range
           const bookingDate = docData.date?.toDate();
           const startDate = new Date(fromDate + "T00:00:00Z");
           const endDate = new Date(toDate + "T23:59:59Z");
-          
+
           if (bookingDate && bookingDate >= startDate && bookingDate <= endDate) {
             if (!allBookings.some(b => b.id === docData.id)) {
               newDocs.push(docData)
@@ -183,8 +188,8 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
           const cartRefs = Array.isArray(booking.subCategoryCart_id)
             ? booking.subCategoryCart_id
             : booking.subCategoryCart_id
-            ? [booking.subCategoryCart_id]
-            : []
+              ? [booking.subCategoryCart_id]
+              : []
 
           for (const ref of cartRefs) {
             try {
@@ -333,6 +338,8 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
                 <TableHead>Status</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Address</TableHead>
+                <TableHead>Actions</TableHead>
+
               </TableRow>
             </TableHeader>
 
@@ -367,9 +374,8 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
                   return (
                     <TableRow
                       key={`${b.id}-${index}`}
-                      className={`${
-                        index % 2 === 0 ? "bg-gray-50" : "bg-white"
-                      } hover:bg-muted/40 transition`}
+                      className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"
+                        } hover:bg-muted/40 transition`}
                     >
                       <TableCell className="font-medium truncate max-w-[140px]" title={b.id}>
                         {b.id}
@@ -403,6 +409,20 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
                       <TableCell className="truncate max-w-[150px]" title={b.bookingAddress}>
                         {b.bookingAddress || "—"}
                       </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedBooking(b);
+                            setDetailsOpen(true);
+                          }}
+                        >
+                          View
+                        </Button>
+
+                      </TableCell>
+
                     </TableRow>
                   )
                 })
@@ -431,6 +451,18 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
           </div>
         </div>
       </CardContent>
+      {selectedBooking && (
+        <DetailsSheet
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          booking={selectedBooking}
+          customer={customerMap[selectedBooking.customer_id?.path ?? ""] || {}}
+          provider={providerMap[selectedBooking.provider_id?.path ?? ""] || {}}
+          services={servicesMap[selectedBooking.id] || []}
+        />
+      )}
+
+
     </Card>
   )
 }

@@ -28,7 +28,9 @@ export async function fetchBookingStats(fromDate?: string, toDate?: string): Pro
     const customerIds = [
         "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
         "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
-        "VxxapfO7l8YM5f6xmFqpThc17eD3"
+        "VxxapfO7l8YM5f6xmFqpThc17eD3",
+        "Q0kKYbdOKVbeZsdiLGsJoM5BWQl1",
+        "fGLJCCFDEneQZ7ciz71Q29WBgGQ2"
     ]
 
     const customerRefs = customerIds.map(id => doc(db, "customer", id))

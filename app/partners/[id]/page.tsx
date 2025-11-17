@@ -44,6 +44,8 @@ import {
   BarChart3,
   Briefcase,
   MessageSquare,
+  Fuel,
+  CalendarDays,
 } from "lucide-react"
 
 // Import the section components
@@ -54,6 +56,11 @@ import { PartnerDocumentsSection } from "./sections/partner-documents"
 import { PartnerChemicalsSection } from "./sections/partner-chemicals"
 import { PartnerLoansSection } from "./sections/partner-loans"
 import { PartnerReviewsSection } from "./sections/partner-review"
+import { PartnerFuelSection } from "./sections/partner-fuel"
+import { PartnerAvailabilitySection } from "./sections/partner-availability"
+import PartnerAttendance from "./sections/partner-attendance";
+
+import { UserCheck } from "lucide-react" // Add to imports
 
 type PartnerDoc = {
   id: string
@@ -149,76 +156,76 @@ export default function PartnerDetailsPage() {
   }, [partnerId, db])
 
   // ✅ Fetch bookings stats (working days current month by default)
-useEffect(() => {
-  const fetchBookingsStats = async () => {
-    if (!partner?.id) return
-    try {
-      const partnerRef = doc(db, "customer", partner.id)
+  useEffect(() => {
+    const fetchBookingsStats = async () => {
+      if (!partner?.id) return
+      try {
+        const partnerRef = doc(db, "customer", partner.id)
 
-      let startDate: Date
-      let endDate: Date
-      let queryFilters: any[] = [where("provider_id", "==", partnerRef)]
+        let startDate: Date
+        let endDate: Date
+        let queryFilters: any[] = [where("provider_id", "==", partnerRef)]
 
-      if (fromDate && toDate) {
-        // ✅ Use selected range
-        startDate = new Date(`${fromDate}T00:00:00`)
-        endDate = new Date(`${toDate}T23:59:59`)
-        queryFilters.push(where("date", ">=", Timestamp.fromDate(startDate)))
-        queryFilters.push(where("date", "<=", Timestamp.fromDate(endDate)))
-      } else {
-        // ✅ No date selected → show all-time completed bookings,
-        // but working days should still use current month
-        const now = new Date()
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        if (fromDate && toDate) {
+          // ✅ Use selected range
+          startDate = new Date(`${fromDate}T00:00:00`)
+          endDate = new Date(`${toDate}T23:59:59`)
+          queryFilters.push(where("date", ">=", Timestamp.fromDate(startDate)))
+          queryFilters.push(where("date", "<=", Timestamp.fromDate(endDate)))
+        } else {
+          // ✅ No date selected → show all-time completed bookings,
+          // but working days should still use current month
+          const now = new Date()
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        }
+
+        // ✅ All-time or date-filtered bookings
+        const bookingsQuery = query(collection(db, "bookings"), ...queryFilters)
+        const snapshot = await getDocs(bookingsQuery)
+
+        let total = snapshot.size
+        let completed = 0
+        let workingDaysSet = new Set<string>()
+
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data()
+
+          if (data.status?.toLowerCase() === "service_completed") {
+            completed++
+          }
+
+          // ✅ Working days logic (only current month if no date selected)
+          if (data.timeSlot instanceof Timestamp) {
+            const slotDate = data.timeSlot.toDate()
+            const isWithinRange = slotDate >= startDate && slotDate <= endDate
+            if (isWithinRange) workingDaysSet.add(slotDate.toDateString())
+          }
+        })
+
+        const rangeDurationMs = endDate.getTime() - startDate.getTime()
+        const rangeDurationDays =
+          Math.ceil(rangeDurationMs / (1000 * 60 * 60 * 24)) + 1
+
+        const totalWorkingDays = workingDaysSet.size
+        const totalNonWorkingDays = rangeDurationDays - totalWorkingDays
+
+        setWorkingDays(totalWorkingDays)
+        setNonWorkingDays(totalNonWorkingDays)
+
+        // ✅ Always update total & completed bookings (both all-time and filtered)
+        setPartner((prev) =>
+          prev
+            ? { ...prev, totalBookings: total, completedBookings: completed }
+            : prev
+        )
+      } catch (err) {
+        console.error("Failed to fetch bookings stats:", err)
       }
-
-      // ✅ All-time or date-filtered bookings
-      const bookingsQuery = query(collection(db, "bookings"), ...queryFilters)
-      const snapshot = await getDocs(bookingsQuery)
-
-      let total = snapshot.size
-      let completed = 0
-      let workingDaysSet = new Set<string>()
-
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data()
-
-        if (data.status?.toLowerCase() === "service_completed") {
-          completed++
-        }
-
-        // ✅ Working days logic (only current month if no date selected)
-        if (data.timeSlot instanceof Timestamp) {
-          const slotDate = data.timeSlot.toDate()
-          const isWithinRange = slotDate >= startDate && slotDate <= endDate
-          if (isWithinRange) workingDaysSet.add(slotDate.toDateString())
-        }
-      })
-
-      const rangeDurationMs = endDate.getTime() - startDate.getTime()
-      const rangeDurationDays =
-        Math.ceil(rangeDurationMs / (1000 * 60 * 60 * 24)) + 1
-
-      const totalWorkingDays = workingDaysSet.size
-      const totalNonWorkingDays = rangeDurationDays - totalWorkingDays
-
-      setWorkingDays(totalWorkingDays)
-      setNonWorkingDays(totalNonWorkingDays)
-
-      // ✅ Always update total & completed bookings (both all-time and filtered)
-      setPartner((prev) =>
-        prev
-          ? { ...prev, totalBookings: total, completedBookings: completed }
-          : prev
-      )
-    } catch (err) {
-      console.error("Failed to fetch bookings stats:", err)
     }
-  }
 
-  fetchBookingsStats()
-}, [partner?.id, db, fromDate, toDate])
+    fetchBookingsStats()
+  }, [partner?.id, db, fromDate, toDate])
 
 
   // Fetch wallet information (all-time by default)
@@ -688,7 +695,10 @@ useEffect(() => {
               </CardHeader>
               <CardContent>
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-7">
+                  <TabsList className={`grid w-full ${partner?.userType?.AgencyPartner
+                      ? "grid-cols-9" // Show 9 tabs when agency partner
+                      : "grid-cols-8" // Show 8 tabs otherwise
+                    }`}>
                     <TabsTrigger value="earnings" className="flex items-center gap-2">
                       <BarChart3 className="w-4 h-4" />
                       <span className="hidden sm:inline">Earnings</span>
@@ -705,6 +715,31 @@ useEffect(() => {
                       <CreditCard className="w-4 h-4" />
                       <span className="hidden sm:inline">Credits</span>
                     </TabsTrigger>
+                 
+    {/* ✅ Attendance tab → only for Agency Partners */}
+    {partner?.userType?.AgencyPartner && (
+      <TabsTrigger value="attendance" className="flex items-center gap-2">
+        <UserCheck className="w-4 h-4" />
+        <span className="hidden sm:inline">Attendance</span>
+      </TabsTrigger>
+    )}
+
+    {/* ✅ Fuel tab → only for Agency Partners */}
+    {partner?.userType?.AgencyPartner && (
+      <TabsTrigger value="fuel" className="flex items-center gap-2">
+        <Fuel className="w-4 h-4" />
+        <span className="hidden sm:inline">Fuel Expense</span>
+      </TabsTrigger>
+    )}
+
+    {/* ✅ Availability tab → only for Service Providers */}
+    {partner?.userType?.provider && (
+      <TabsTrigger value="availability" className="flex items-center gap-2">
+        <CalendarDays className="w-4 h-4" />
+        <span className="hidden sm:inline">Availability</span>
+      </TabsTrigger>
+    )}
+
                     <TabsTrigger value="chemicals" className="flex items-center gap-2">
                       <ShoppingCart className="w-4 h-4" />
                       <span className="hidden sm:inline">Chemicals</span>
@@ -723,14 +758,29 @@ useEffect(() => {
                     <PartnerEarningsSection partnerId={partnerId} fromDate={fromDate} toDate={toDate} />
                   </TabsContent>
                   <TabsContent value="bookings" className="mt-6">
-                    <PartnerBookingsSection partnerId={partnerId}  />
+                    <PartnerBookingsSection partnerId={partnerId} />
                   </TabsContent>
                   <TabsContent value="loans" className="mt-6">
                     <PartnerLoansSection partnerId={partnerId} fromDate={fromDate} toDate={toDate} />
                   </TabsContent>
                   <TabsContent value="credits" className="mt-6">
-                    <PartnerCreditsSection partnerId={partnerId}  />
+                    <PartnerCreditsSection partnerId={partnerId} />
                   </TabsContent>
+                  <TabsContent value="attendance" className="mt-6">
+                    <PartnerAttendance partnerName="Vishal Bodre" startDate={fromDate} endDate={toDate} />
+                  </TabsContent>
+
+                
+                    <TabsContent value="fuel" className="mt-6">
+                      <PartnerFuelSection partnerId={partnerId} fromDate={fromDate} toDate={toDate} />
+                    </TabsContent>
+                
+
+
+                  <TabsContent value="availability" className="mt-6">
+                    <PartnerAvailabilitySection partnerId={partnerId} />
+                  </TabsContent>
+
                   <TabsContent value="documents" className="mt-6">
                     <PartnerDocumentsSection partnerId={partnerId} />
                   </TabsContent>

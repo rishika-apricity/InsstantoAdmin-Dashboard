@@ -51,86 +51,65 @@ export async function fetchDailyOverviewSummary(): Promise<DailyOverview> {
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
   const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
-  // Step 1️⃣ — Daily average expense from Google Sheet
+  // Step 1️⃣ — Daily average expense
   const dailyAverageExpense = await fetchAverageExpenseFromSheet();
 
-  // Step 2️⃣ — Today's bookings
-  let totalBookings = 0;
-  let totalBookingAmount = 0;
-  const servicesMap: Record<string, { count: number; amount: number }> = {};
-  const bookings: BookingInfo[] = [];
+  // Step 2️⃣ — Fetch partners present today
+  let totalPresent = 0;
+  const presentPartners: { name: string }[] = [];
 
   try {
-    const bookingsSnap = await getDocs(
+    // Fetch all attendance records for today with status = Present
+    const attendanceSnap = await getDocs(
       query(
-        collection(db, "bookings"),
-        where("date", ">=", Timestamp.fromDate(startOfDay)),
-        where("date", "<=", Timestamp.fromDate(endOfDay))
+        collection(db, "partner_attendence"),
+        where("status", "==", "Present")
       )
     );
 
-    const customerRefs: Record<string, string> = {}; // cache to avoid duplicate fetches
-
-    for (const docSnap of bookingsSnap.docs) {
+    for (const docSnap of attendanceSnap.docs) {
       const d = docSnap.data();
-      totalBookings++;
-      totalBookingAmount += d.amount_paid || 0;
 
-      // --- Fetch customer name ---
-      let customerName = "Unknown Customer";
-      const customerRef = d.customer_id;
-      if (customerRef?.path) {
-        if (customerRefs[customerRef.path]) {
-          customerName = customerRefs[customerRef.path];
-        } else {
+      // Handle both `startTime` and `date` timestamp fields
+      const dateField = d.startTime || d.date;
+      const recordDate = dateField?.toDate ? dateField.toDate() : null;
+
+      if (!recordDate) continue;
+
+      // Check if record is for today
+      if (recordDate >= startOfDay && recordDate <= endOfDay) {
+        totalPresent++;
+
+        let partnerName = "Unknown Partner";
+        const partnerRef = d.partnerid;
+        if (partnerRef?.path) {
           try {
-          const custDoc = await getDoc(customerRef);
-if (custDoc.exists()) {
-  const custData = custDoc.data() as Record<string, any>; // ✅ Explicit type cast
-  customerName =
-    custData.display_name ||
-    custData.customer_name ||
-    custData.name ||
-    "Unknown Customer";
-  customerRefs[customerRef.path] = customerName;
-}
-
+            const partnerDoc = await getDoc(partnerRef);
+            if (partnerDoc.exists()) {
+              const pdata = partnerDoc.data() as Record<string, any>;
+              partnerName =
+                pdata.display_name ||
+                pdata.customer_name ||
+                pdata.name ||
+                "Unknown Partner";
+            }
           } catch (err) {
-            console.warn("Error fetching customer:", err);
+            console.warn("Error fetching partner:", err);
           }
         }
+
+        presentPartners.push({ name: partnerName });
       }
-
-      const serviceName =
-        d.service_name ||
-        d.serviceOpt ||
-        d.subCategoryName ||
-        d.sub_category_name ||
-        d.cartClone_name ||
-        "Unknown Service";
-
-      // --- Build per-service aggregation ---
-      if (!servicesMap[serviceName]) {
-        servicesMap[serviceName] = { count: 0, amount: 0 };
-      }
-      servicesMap[serviceName].count++;
-      servicesMap[serviceName].amount += d.amount_paid || 0;
-
-      // --- Push booking info ---
-      bookings.push({
-        customer: customerName,
-        service: serviceName,
-        amount: d.amount_paid || 0,
-      });
     }
   } catch (e) {
-    console.error("Error fetching today's bookings:", e);
+    console.error("Error fetching today's attendance:", e);
   }
 
-  const services = Object.keys(servicesMap).map((key) => ({
-    name: key,
-    count: servicesMap[key].count,
-    amount: servicesMap[key].amount,
+  // Format partner data as service list
+  const services = presentPartners.map((p) => ({
+    name: p.name,
+    count: 1,
+    amount: 0,
   }));
 
   return {
@@ -141,9 +120,9 @@ if (custDoc.exists()) {
       year: "numeric",
     }),
     dailyAverageExpense,
-    totalBookings,
-    totalBookingAmount,
-    bookings,
+    totalBookings: totalPresent, // total partners present today
+    totalBookingAmount: 0,
+    bookings: [],
     services,
   };
 }

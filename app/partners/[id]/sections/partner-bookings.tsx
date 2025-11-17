@@ -17,6 +17,7 @@ import {
     orderBy,
     Timestamp,
 } from "firebase/firestore"
+
 import { getFirestoreDb } from "@/lib/firebase"
 import {
     Calendar,
@@ -31,6 +32,8 @@ import {
     ChevronRight,
     BarChart3,
 } from "lucide-react"
+import { DetailsSheet } from "@/components/bookings/booking-component"
+
 
 type BookingDoc = {
     id: string
@@ -48,12 +51,15 @@ type BookingDoc = {
     cartClone_id?: any
     itemOptions_id?: any
     walletAmountUsed?: any
+    partner_fare?: any
+    bookingAddress?: any
 }
 
 type ServiceInfo = string[]
 
 interface PartnerBookingsSectionProps {
     partnerId: string
+
 }
 
 const PAGE_SIZE = 10
@@ -64,6 +70,9 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
     const [servicesMap, setServicesMap] = useState<Record<string, ServiceInfo>>({})
     const [customerMap, setCustomerMap] = useState<Record<string, { name: string; phone: string }>>({})
     const [loading, setLoading] = useState(true)
+    const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
+    const [detailsOpen, setDetailsOpen] = useState(false)
+
 
     // filters
     const [searchTerm, setSearchTerm] = useState("")
@@ -127,56 +136,56 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
     }, [partnerId, db])
 
     // ✅ Fixed version — fetch multiple service names
- const fetchServicesInfo = async (bookingDocs: BookingDoc[]) => {
-  try {
-    const servicesInfo: Record<string, string[]> = {}
+    const fetchServicesInfo = async (bookingDocs: BookingDoc[]) => {
+        try {
+            const servicesInfo: Record<string, string[]> = {}
 
-    await Promise.all(
-      bookingDocs.map(async (booking) => {
-        const serviceNames: string[] = []
+            await Promise.all(
+                bookingDocs.map(async (booking) => {
+                    const serviceNames: string[] = []
 
-        // Handle single or multiple subCategoryCart_id entries
-        const cartRefs = Array.isArray(booking.subCategoryCart_id)
-          ? booking.subCategoryCart_id
-          : booking.subCategoryCart_id
-          ? [booking.subCategoryCart_id]
-          : []
+                    // Handle single or multiple subCategoryCart_id entries
+                    const cartRefs = Array.isArray(booking.subCategoryCart_id)
+                        ? booking.subCategoryCart_id
+                        : booking.subCategoryCart_id
+                            ? [booking.subCategoryCart_id]
+                            : []
 
-        for (const ref of cartRefs) {
-          try {
-            const refPath = ref?.path || ref
-            if (!refPath) continue
+                    for (const ref of cartRefs) {
+                        try {
+                            const refPath = ref?.path || ref
+                            if (!refPath) continue
 
-            const cartDocRef = refPath.includes("/")
-              ? doc(db, refPath)
-              : doc(db, "sub_categoryCart", refPath)
+                            const cartDocRef = refPath.includes("/")
+                                ? doc(db, refPath)
+                                : doc(db, "sub_categoryCart", refPath)
 
-            const cartDoc = await getDoc(cartDocRef)
-            if (cartDoc.exists()) {
-              const data = cartDoc.data()
-              const name =
-                data.serviceName ||
-                data.service_name ||
-                data.subCategoryName ||
-                data.sub_category_name ||
-                "Unknown Service"
-              serviceNames.push(name)
-            }
-          } catch (err) {
-            console.warn("Error fetching cart doc:", err)
-          }
+                            const cartDoc = await getDoc(cartDocRef)
+                            if (cartDoc.exists()) {
+                                const data = cartDoc.data()
+                                const name =
+                                    data.serviceName ||
+                                    data.service_name ||
+                                    data.subCategoryName ||
+                                    data.sub_category_name ||
+                                    "Unknown Service"
+                                serviceNames.push(name)
+                            }
+                        } catch (err) {
+                            console.warn("Error fetching cart doc:", err)
+                        }
+                    }
+
+                    servicesInfo[booking.id] =
+                        serviceNames.length > 0 ? serviceNames : ["Unknown Service"]
+                })
+            )
+
+            setServicesMap(servicesInfo)
+        } catch (error) {
+            console.error("Error fetching services info:", error)
         }
-
-        servicesInfo[booking.id] =
-          serviceNames.length > 0 ? serviceNames : ["Unknown Service"]
-      })
-    )
-
-    setServicesMap(servicesInfo)
-  } catch (error) {
-    console.error("Error fetching services info:", error)
-  }
-}
+    }
 
 
     // fetch customers info
@@ -235,7 +244,7 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                 return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Cancelled</Badge>
             case "confirmed":
             case "accepted":
-                return <Badge className="bg-blue-100 text-blue-800"><AlertCircle className="w-3 h-3 mr-1" />Confirmed</Badge>
+                return <Badge className="bg-blue-100 text-blue-800"><AlertCircle className="w-3 h-3 mr-1" />Accepted</Badge>
             case "in-progress":
                 return <Badge className="bg-purple-100 text-purple-800"><AlertCircle className="w-3 h-3 mr-1" />In Progress</Badge>
             default:
@@ -366,7 +375,10 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                                             <TableHead>Time Slot</TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead>Amount</TableHead>
-                                            <TableHead>OTP</TableHead>
+                                            <TableHead>Partner Fare</TableHead>
+                                            <TableHead>Address</TableHead>
+                                            <TableHead>Actions</TableHead>
+
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -395,7 +407,23 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                                                     <TableCell className="text-sm">{formatDate(booking.timeSlot)}</TableCell>
                                                     <TableCell>{getStatusBadge(booking.status)}</TableCell>
                                                     <TableCell className="font-medium">{formatCurrency(booking.amount_paid)}</TableCell>
-                                                    <TableCell className="font-mono">{booking.otp || "—"}</TableCell>
+                                                    <TableCell className="font-mono">{booking.partner_fare || "—"}</TableCell>
+                                                    <TableCell className="truncate max-w-[150px]" title={booking.bookingAddress}>
+                                                        {booking.bookingAddress || "—"}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                setSelectedBooking(booking)
+                                                                setDetailsOpen(true)
+                                                            }}
+                                                        >
+                                                            View
+                                                        </Button>
+                                                    </TableCell>
+
                                                 </TableRow>
                                             )
                                         })}
@@ -422,6 +450,17 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                     )}
                 </CardContent>
             </Card>
+            {selectedBooking && (
+                <DetailsSheet
+                    open={detailsOpen}
+                    onOpenChange={setDetailsOpen}
+                    booking={selectedBooking}
+                    customer={customerMap[selectedBooking.customer_id?.path] || {}}
+                    provider={{}}  // partner view doesn't need provider
+                    services={servicesMap[selectedBooking.id] || []}
+                />
+            )}
+
         </div>
     )
-}
+} 

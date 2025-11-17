@@ -296,43 +296,65 @@ export default function ChatBotPage() {
         </Card>
 
         {/* Details Dialog */}
-        <Dialog open={openDetails} onOpenChange={setOpenDetails}>
-          <DialogContent
-            className="p-0 w-[96vw] max-w-[96vw] h-[88vh] rounded-md sm:w-auto sm:max-w-xl sm:h-auto sm:max-h-[85vh] sm:rounded-2xl md:max-w-2xl lg:max-w-3xl overflow-hidden"
-          >
-            <DialogHeader className="px-4 sm:px-6 pt-6 space-y-2">
-              <DialogTitle>Conversation</DialogTitle>
-              <DialogDescription>
-                {selected?.created_at
-                  ? `Started on ${formatDateTime(selected.created_at)}`
-                  : "No timestamp available"}
-              </DialogDescription>
+      {/* Details Dialog */}
+<Dialog open={openDetails} onOpenChange={setOpenDetails}>
+  <DialogContent
+    className="p-0 w-[96vw] max-w-[96vw] h-[88vh] rounded-md sm:w-auto sm:max-w-xl sm:h-auto sm:max-h-[85vh] sm:rounded-2xl md:max-w-2xl lg:max-w-3xl overflow-hidden"
+  >
+    <DialogHeader className="px-4 sm:px-6 pt-6 space-y-2">
+      <DialogTitle>Conversation</DialogTitle>
+      <DialogDescription>
+        {selected?.created_at
+          ? `Started on ${formatDateTime(selected.created_at)}`
+          : "No timestamp available"}
+      </DialogDescription>
 
-              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
-                {selected && <PartnerChip r={selected} />}
-              </div>
-            </DialogHeader>
+      <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+        {selected && <PartnerChip r={selected} />}
+      </div>
+    </DialogHeader>
 
-            <div className="px-4 sm:px-6 pb-4 sm:pb-6 h-[calc(88vh-80px)] sm:h-auto sm:max-h-[calc(85vh-88px)] overflow-hidden">
-              {selected?.chat_history?.length ? (
-                <div className="rounded-lg border bg-white h-full">
-                  <ul className="divide-y h-full overflow-auto">
-                    {selected.chat_history.map((m, idx) => (
-                      <li
-                        key={idx}
-                        className="p-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
-                      >
-                        {m}
-                      </li>
-                    ))}
-                  </ul>
+    {/* --- SCROLLABLE CHAT AREA --- */}
+    <div className="px-4 sm:px-6 pb-4 sm:pb-6 overflow-y-auto max-h-[75vh] sm:max-h-[70vh]">
+      {selected?.chat_history?.length ? (
+        <div className="space-y-4 py-4">
+          {selected.chat_history.map((m, idx) => {
+            // BASIC BOT DETECTION → you can refine this anytime
+            const isBot =
+              m.includes("Insstanto") ||
+              m.startsWith("आप") ||
+              m.startsWith("Namaste") ||
+              m.startsWith("नमस्ते") ||
+              m.toLowerCase().includes("step")
+
+            return (
+              <div
+                key={idx}
+                className={`flex w-full ${isBot ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`
+                    max-w-[80%] px-4 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words shadow-sm
+                    ${
+                      isBot
+                        ? "bg-indigo-600 text-white rounded-br-none"
+                        : "bg-gray-100 text-gray-800 rounded-bl-none"
+                    }
+                  `}
+                >
+                  {m}
                 </div>
-              ) : (
-                <div className="text-sm text-gray-600">No messages in this conversation.</div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="text-sm text-gray-600">No messages in this conversation.</div>
+      )}
+    </div>
+  </DialogContent>
+</Dialog>
+
       </div>
     </div>
   )

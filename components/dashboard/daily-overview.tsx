@@ -71,8 +71,9 @@ export function DailyOverviewCard() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 text-gray-700">
                 <TrendingUp className="w-4 h-4 text-green-600" />
-                <p className="text-sm font-medium">
-                  Total Bookings Today:{" "}
+            <p className="text-sm font-medium">
+  Available Partners Today:{" "}
+
                   <span className="text-gray-800 font-semibold">
                     {overview?.totalBookings || 0}
                   </span>
@@ -81,9 +82,10 @@ export function DailyOverviewCard() {
             </div>
 
             {/* Services List */}
-            <div className="text-sm font-medium text-gray-700 mb-2">
-              Services Booked Today
-            </div>
+<div className="text-sm font-medium text-gray-700 mb-2">
+  Available Partners for Today
+</div>
+
             <ScrollArea className="h-[150px] pr-2">
               {overview?.services && overview.services.length > 0 ? (
                 overview.services.map((srv, i) => (
@@ -102,7 +104,7 @@ export function DailyOverviewCard() {
                 ))
               ) : (
                 <div className="text-center text-gray-500 text-sm py-4">
-                  No bookings found today.
+                  No Partner Available for today.
                 </div>
               )}
             </ScrollArea>
