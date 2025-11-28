@@ -195,6 +195,8 @@ useEffect(() => {
         "mwBcGMWLwDULHIS9hXx7JLuRfCi1",
         "Dmoo33tCx0OU1HMtapISBc9Oeeq2",
         "VxxapfO7l8YM5f6xmFqpThc17eD3",
+          "Q0kKYbdOKVbeZsdiLGsJoM5BWQl1",
+  "fGLJCCFDEneQZ7ciz71Q29WBgGQ2"
       ]
       setPartners(partnersData.filter((p) => allowedIds.includes(p.id)))
     } catch (error) {

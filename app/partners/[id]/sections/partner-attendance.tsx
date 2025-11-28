@@ -121,7 +121,7 @@ const PartnerAttendance: React.FC<Props> = ({
         </div>
       ))}
     </div>
-  );
+  )
 };
 
 export default PartnerAttendance;

@@ -135,7 +135,7 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
         fetchBookings()
     }, [partnerId, db])
 
-    // ✅ Fixed version — fetch multiple service names
+    // ✅ UPDATED: Fetch services from cart collection
     const fetchServicesInfo = async (bookingDocs: BookingDoc[]) => {
         try {
             const servicesInfo: Record<string, string[]> = {}
@@ -144,38 +144,38 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                 bookingDocs.map(async (booking) => {
                     const serviceNames: string[] = []
 
-                    // Handle single or multiple subCategoryCart_id entries
+                    // Get subCategoryCart_id references (can be single or array)
                     const cartRefs = Array.isArray(booking.subCategoryCart_id)
                         ? booking.subCategoryCart_id
                         : booking.subCategoryCart_id
                             ? [booking.subCategoryCart_id]
                             : []
 
-                    for (const ref of cartRefs) {
+                    // For each subCategoryCart reference, query the cart collection
+                    for (const subCategoryRef of cartRefs) {
                         try {
-                            const refPath = ref?.path || ref
-                            if (!refPath) continue
+                            // Query cart collection where subCategoryCartId matches the reference
+                            const cartQuery = query(
+                                collection(db, "cart"),
+                                where("subCategoryCartId", "==", subCategoryRef)
+                            )
 
-                            const cartDocRef = refPath.includes("/")
-                                ? doc(db, refPath)
-                                : doc(db, "sub_categoryCart", refPath)
+                            const cartSnapshot = await getDocs(cartQuery)
 
-                            const cartDoc = await getDoc(cartDocRef)
-                            if (cartDoc.exists()) {
-                                const data = cartDoc.data()
-                                const name =
-                                    data.serviceName ||
-                                    data.service_name ||
-                                    data.subCategoryName ||
-                                    data.sub_category_name ||
+                            // Extract service_name from each matching cart document
+                            cartSnapshot.forEach((cartDoc) => {
+                                const cartData = cartDoc.data()
+                                const serviceName = cartData.service_name ||
+                                    cartData.serviceName ||
                                     "Unknown Service"
-                                serviceNames.push(name)
-                            }
+                                serviceNames.push(serviceName)
+                            })
                         } catch (err) {
-                            console.warn("Error fetching cart doc:", err)
+                            console.warn("Error querying cart collection:", err)
                         }
                     }
 
+                    // Store the service names for this booking
                     servicesInfo[booking.id] =
                         serviceNames.length > 0 ? serviceNames : ["Unknown Service"]
                 })
@@ -364,8 +364,8 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                         </div>
                     ) : (
                         <>
-                            <div className="rounded-md border">
-                                <Table>
+                            <div className="rounded-md border overflow-x-auto">
+                                <Table className="min-w-[1200px]">
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Booking ID</TableHead>
@@ -394,17 +394,17 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
                                                             <p className="text-xs text-muted-foreground">{customer.phone}</p>
                                                         </div>
                                                     </TableCell>
-                                                    <TableCell className="max-w-[200px]">
+                                                    <TableCell className="min-w-[200px] max-w-[250px]">
                                                         <div className="space-y-1">
                                                             {services.map((s, i) => (
-                                                                <div key={i} className="text-xs">
+                                                                <div key={i} className="text-xs truncate" title={s}>
                                                                     <span className="font-medium">{s}</span>
                                                                 </div>
                                                             ))}
                                                         </div>
                                                     </TableCell>
-                                                    <TableCell className="text-sm">{formatDate(booking.date)}</TableCell>
-                                                    <TableCell className="text-sm">{formatDate(booking.timeSlot)}</TableCell>
+                                                    <TableCell className="text-sm whitespace-nowrap min-w-[150px]">{formatDate(booking.date)}</TableCell>
+                                                    <TableCell className="text-sm whitespace-nowrap min-w-[150px]">{formatDate(booking.timeSlot)}</TableCell>
                                                     <TableCell>{getStatusBadge(booking.status)}</TableCell>
                                                     <TableCell className="font-medium">{formatCurrency(booking.amount_paid)}</TableCell>
                                                     <TableCell className="font-mono">{booking.partner_fare || "—"}</TableCell>
@@ -463,4 +463,4 @@ export function PartnerBookingsSection({ partnerId }: PartnerBookingsSectionProp
 
         </div>
     )
-} 
+}

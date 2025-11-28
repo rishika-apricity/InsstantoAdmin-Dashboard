@@ -222,7 +222,7 @@ export default function ChatBotPage() {
         <Card>
           <CardHeader>
             <CardTitle>Chat Bot Flows</CardTitle>
-            <CardDescription>Latest conversations (limited to 100)</CardDescription>
+            <CardDescription>Latest conversations</CardDescription>
           </CardHeader>
 
           <CardContent>

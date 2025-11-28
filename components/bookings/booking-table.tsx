@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Phone, Calendar, Search, Filter } from "lucide-react"
 import { DetailsSheet } from "@/components/bookings/booking-component"
+
 // ---------- Types ----------
 type BookingDoc = {
   id: string
@@ -61,11 +62,8 @@ export function BookingTable({ fromDate, toDate }: BookingTableProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
-const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
-
+  const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
-
-
 
   // ---------- Fetch bookings within date range ----------
   useEffect(() => {
@@ -177,7 +175,7 @@ const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
     setProviderMap(prev => ({ ...prev, ...newProv }))
   }
 
-  // ---------- Fetch services from sub_categoryCart ----------
+  // ---------- Fetch services from cart collection ----------
   const fetchServicesInfo = async (bookingDocs: BookingDoc[]) => {
     try {
       const servicesInfo: ServiceMap = {}
@@ -185,38 +183,42 @@ const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
       await Promise.all(
         bookingDocs.map(async (booking) => {
           const serviceNames: string[] = []
+          
+          // Get subCategoryCart_id references (can be single or array)
           const cartRefs = Array.isArray(booking.subCategoryCart_id)
             ? booking.subCategoryCart_id
             : booking.subCategoryCart_id
               ? [booking.subCategoryCart_id]
               : []
 
-          for (const ref of cartRefs) {
+          // For each subCategoryCart reference, query the cart collection
+          for (const subCategoryRef of cartRefs) {
             try {
-              const refPath = ref?.path || ref
-              if (!refPath) continue
-
-              const cartDocRef = refPath.includes("/")
-                ? doc(db, refPath)
-                : doc(db, "sub_categoryCart", refPath)
-
-              const cartDoc = await getDoc(cartDocRef)
-              if (cartDoc.exists()) {
-                const data = cartDoc.data()
-                const name =
-                  data.serviceName ||
-                  data.service_name ||
-                  data.subCategoryName ||
-                  data.sub_category_name ||
-                  "Unknown Service"
-                serviceNames.push(name)
-              }
+              // Query cart collection where subCategoryCartId matches the reference
+              const cartQuery = query(
+                collection(db, "cart"),
+                where("subCategoryCartId", "==", subCategoryRef)
+              )
+              
+              const cartSnapshot = await getDocs(cartQuery)
+              
+              // Extract service_name from each matching cart document
+              cartSnapshot.forEach((cartDoc) => {
+                const cartData = cartDoc.data()
+                const serviceName = cartData.service_name || 
+                                    cartData.serviceName || 
+                                    "Unknown Service"
+                serviceNames.push(serviceName)
+              })
             } catch (err) {
-              console.warn("Error fetching cart doc:", err)
+              console.warn("Error querying cart collection:", err)
             }
           }
 
-          servicesInfo[booking.id] = serviceNames.length > 0 ? serviceNames : ["Unknown Service"]
+          // Store the service names for this booking
+          servicesInfo[booking.id] = serviceNames.length > 0 
+            ? serviceNames 
+            : ["Unknown Service"]
         })
       )
 
@@ -339,25 +341,24 @@ const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
                 <TableHead>Amount</TableHead>
                 <TableHead>Address</TableHead>
                 <TableHead>Actions</TableHead>
-
               </TableRow>
             </TableHeader>
 
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-6">
+                  <TableCell colSpan={10} className="text-center py-6">
                     <Loader2 className="h-5 w-5 animate-spin inline mr-2" />
                     Loading bookings...
                   </TableCell>
                 </TableRow>
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-red-600 p-4">{error}</TableCell>
+                  <TableCell colSpan={10} className="text-red-600 p-4">{error}</TableCell>
                 </TableRow>
               ) : paginatedBookings.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     {filteredBookings.length === 0 ? (
                       searchTerm ? "No bookings found matching your search." : "No bookings found in this date range."
                     ) : (
@@ -420,9 +421,7 @@ const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
                         >
                           View
                         </Button>
-
                       </TableCell>
-
                     </TableRow>
                   )
                 })
@@ -451,6 +450,7 @@ const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
           </div>
         </div>
       </CardContent>
+      
       {selectedBooking && (
         <DetailsSheet
           open={detailsOpen}
@@ -461,8 +461,6 @@ const [selectedBooking, setSelectedBooking] = useState<BookingDoc | null>(null)
           services={servicesMap[selectedBooking.id] || []}
         />
       )}
-
-
     </Card>
   )
 }
